@@ -1,12 +1,107 @@
 const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const rateLimit = require("express-rate-limit");
 const Doctor = require("../models/Doctor");
+const { doctorSignupSchema, doctorLoginSchema } = require("../validators/doc_validator");
+const logger = require("../utils/logger");
+const { generateTokenPair, verifyRefreshToken } = require("../utils/tokenUtils");
+const { sendPasswordResetEmail, sendPasswordChangeConfirmation } = require("../utils/emailService");
 
-router.post("/signup", async (req, res) => {
+// Cookie settings based on environment
+const isProduction = process.env.NODE_ENV === 'production';
+
+const accessTokenCookieOptions = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? 'none' : 'lax',
+  maxAge: 15 * 60 * 1000  // 15 minutes
+};
+
+const refreshTokenCookieOptions = {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? 'none' : 'lax',
+  maxAge: 7 * 24 * 60 * 60 * 1000,  // 7 days
+  path: '/api/auth/refresh'  // Only sent to refresh endpoint
+};
+
+// Rate limiter for authentication endpoints
+// Disabled in test environment to avoid interference with tests
+const authLimiter = process.env.NODE_ENV === 'test'
+  ? (req, res, next) => next()  // No-op middleware for tests
+  : rateLimit({
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      max: 5, // Limit each IP to 5 requests per windowMs
+      message: { message: "Too many authentication attempts, please try again after 15 minutes" },
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+
+/**
+ * @swagger
+ * /auth/signup:
+ *   post:
+ *     summary: Register a new doctor
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - specialization
+ *               - email
+ *               - password
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Dr. John Smith
+ *               specialization:
+ *                 type: string
+ *                 example: Cardiology
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: doctor@hospital.com
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 8
+ *                 example: SecurePass123
+ *     responses:
+ *       200:
+ *         description: Doctor registered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Signup successful
+ *                 doctor:
+ *                   $ref: '#/components/schemas/Doctor'
+ *       400:
+ *         description: Validation error or email already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       429:
+ *         description: Too many requests
+ *       500:
+ *         description: Server error
+ */
+router.post("/signup", authLimiter, async (req, res) => {
   try {
-    const { name, specialization, email, password } = req.body;
+    // Validate input with Zod
+    const validatedData = doctorSignupSchema.parse(req.body);
+    const { name, specialization, email, password } = validatedData;
+
     const existing = await Doctor.findOne({ email });
     if (existing) {
       return res.status(400).json({ message: "Email already exists" });
@@ -28,18 +123,77 @@ router.post("/signup", async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("Signup Error:", err);
+    // Handle Zod validation errors
+    if (err.name === "ZodError" || err.issues) {
+      return res.status(400).json({
+        message: "Validation failed",
+        errors: (err.issues || err.errors || []).map(e => ({
+          field: e.path?.join('.') || 'unknown',
+          message: e.message
+        }))
+      });
+    }
+    logger.error("Signup Error", { error: err.message, stack: err.stack });
     res.status(500).json({ message: "Server error" });
   }
 });
 
 
-router.post("/login", async (req, res) => {
+/**
+ * @swagger
+ * /auth/login:
+ *   post:
+ *     summary: Login as a doctor
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: doctor@hospital.com
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 example: SecurePass123
+ *     responses:
+ *       200:
+ *         description: Login successful, cookies set
+ *         headers:
+ *           Set-Cookie:
+ *             schema:
+ *               type: string
+ *               example: token=abc123; refreshToken=def456; HttpOnly
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Login successful
+ *                 doctor:
+ *                   $ref: '#/components/schemas/Doctor'
+ *       401:
+ *         description: Invalid credentials
+ *       429:
+ *         description: Too many requests
+ *       500:
+ *         description: Server error
+ */
+router.post("/login", authLimiter, async (req, res) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email and password required" });
-    }
+    // Validate input with Zod
+    const validatedData = doctorLoginSchema.parse(req.body);
+    const { email, password } = validatedData;
+
     const doctor = await Doctor.findOne({ email });
     if (!doctor) {
       return res.status(401).json({ message: "Invalid credentials" });
@@ -48,17 +202,22 @@ router.post("/login", async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
-    const token = jwt.sign(
-      { doctorId: doctor._id },
-      process.env.JWT_SECRET || "secretkey",
-      { expiresIn: "7d" }
-    );
-    res.cookie("token", token, {
-  httpOnly: true,      
-  secure: true,           
-  sameSite: "none",        
-  maxAge: 7 * 24 * 60 * 60 * 1000
-});
+
+    // Generate access and refresh tokens
+    const { accessToken, refreshToken, refreshTokenExpiry } = generateTokenPair({
+      doctorId: doctor._id
+    });
+
+    // Store refresh token in database
+    doctor.refreshToken = refreshToken;
+    doctor.refreshTokenExpiry = refreshTokenExpiry;
+    await doctor.save();
+
+    // Set tokens in cookies
+    res.cookie("token", accessToken, accessTokenCookieOptions);
+    res.cookie("refreshToken", refreshToken, refreshTokenCookieOptions);
+
+    logger.info("Doctor logged in successfully", { doctorId: doctor._id });
 
     res.json({
       message: "Login successful",
@@ -70,22 +229,346 @@ router.post("/login", async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("Login Error:", err);
+    // Handle Zod validation errors
+    if (err.name === "ZodError" || err.issues) {
+      return res.status(400).json({
+        message: "Validation failed",
+        errors: (err.issues || err.errors || []).map(e => ({
+          field: e.path?.join('.') || 'unknown',
+          message: e.message
+        }))
+      });
+    }
+    logger.error("Login Error", { error: err.message, stack: err.stack });
     res.status(500).json({ message: "Server error" });
   }
 });
 
-router.post("/logout", (req, res) => {
+/**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     summary: Logout doctor and clear tokens
+ *     tags: [Authentication]
+ *     security:
+ *       - cookieAuth: []
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Logout successful
+ *       500:
+ *         description: Server error
+ */
+router.post("/logout", async (req, res) => {
   try {
-      res.clearCookie("token", {
-    httpOnly: true,
-    sameSite: "none",
-    secure: true
-  });
+    // Get doctor ID from token if available
+    const token = req.cookies.token;
+    if (token) {
+      try {
+        const decoded = require('jsonwebtoken').verify(token, process.env.JWT_SECRET);
+        // Clear refresh token from database
+        await Doctor.findByIdAndUpdate(decoded.doctorId, {
+          refreshToken: null,
+          refreshTokenExpiry: null
+        });
+        logger.info("Doctor logged out successfully", { doctorId: decoded.doctorId });
+      } catch (err) {
+        // Token might be expired, continue with logout
+      }
+    }
+
+    // Clear both cookies
+    const clearAccessCookieOptions = {
+      httpOnly: true,
+      sameSite: isProduction ? "none" : "lax",
+      secure: isProduction
+    };
+
+    const clearRefreshCookieOptions = {
+      httpOnly: true,
+      sameSite: isProduction ? "none" : "lax",
+      secure: isProduction,
+      path: '/api/auth/refresh'
+    };
+
+    res.clearCookie("token", clearAccessCookieOptions);
+    res.clearCookie("refreshToken", clearRefreshCookieOptions);
+
     res.json({ message: "Logout successful" });
   } catch (err) {
-    console.error("Logout Error:", err);
+    logger.error("Logout Error", { error: err.message, stack: err.stack });
     res.status(500).json({ message: "Server error" });
   }
 });
+
+/**
+ * @swagger
+ * /auth/refresh:
+ *   post:
+ *     summary: Refresh access token using refresh token
+ *     description: Issues a new access token and rotates the refresh token. Requires valid refresh token in cookie.
+ *     tags: [Authentication]
+ *     security:
+ *       - cookieAuth: []
+ *     responses:
+ *       200:
+ *         description: Token refreshed successfully
+ *         headers:
+ *           Set-Cookie:
+ *             schema:
+ *               type: string
+ *               example: token=newToken123; refreshToken=newRefresh456; HttpOnly
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Token refreshed successfully
+ *       401:
+ *         description: Invalid or expired refresh token
+ *       500:
+ *         description: Server error
+ */
+router.post("/refresh", async (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(401).json({ message: "Refresh token not found" });
+    }
+
+    // Verify refresh token
+    let decoded;
+    try {
+      decoded = verifyRefreshToken(refreshToken);
+    } catch (error) {
+      return res.status(401).json({ message: "Invalid or expired refresh token" });
+    }
+
+    // Find doctor and verify refresh token matches
+    const doctor = await Doctor.findById(decoded.doctorId);
+    if (!doctor || doctor.refreshToken !== refreshToken) {
+      return res.status(401).json({ message: "Invalid refresh token" });
+    }
+
+    // Check if refresh token is expired
+    if (doctor.refreshTokenExpiry && new Date() > doctor.refreshTokenExpiry) {
+      return res.status(401).json({ message: "Refresh token expired" });
+    }
+
+    // Generate new access token and rotate refresh token
+    const { accessToken, refreshToken: newRefreshToken, refreshTokenExpiry } = generateTokenPair({
+      doctorId: doctor._id
+    });
+
+    // Update refresh token in database (token rotation)
+    doctor.refreshToken = newRefreshToken;
+    doctor.refreshTokenExpiry = refreshTokenExpiry;
+    await doctor.save();
+
+    // Set new tokens in cookies
+    res.cookie("token", accessToken, accessTokenCookieOptions);
+    res.cookie("refreshToken", newRefreshToken, refreshTokenCookieOptions);
+
+    logger.info("Access token refreshed successfully", { doctorId: doctor._id });
+
+    res.json({
+      message: "Token refreshed successfully"
+    });
+  } catch (err) {
+    logger.error("Refresh Token Error", { error: err.message, stack: err.stack });
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/**
+ * @swagger
+ * /auth/forgot-password:
+ *   post:
+ *     summary: Request password reset link
+ *     description: Generates a secure reset token and sends an email with password reset link. Returns same message for both existing and non-existing emails (prevents enumeration).
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: doctor@hospital.com
+ *     responses:
+ *       200:
+ *         description: Password reset email sent (or not, but message is same for security)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: If an account exists with this email, a password reset link has been sent
+ *       400:
+ *         description: Email is required
+ *       429:
+ *         description: Too many requests
+ *       500:
+ *         description: Server error
+ */
+router.post("/forgot-password", authLimiter, async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    // Find doctor by email
+    const doctor = await Doctor.findOne({ email });
+
+    // Always return success to prevent email enumeration
+    // Don't reveal if email exists or not
+    if (!doctor) {
+      logger.info("Password reset requested for non-existent email", { email });
+      return res.json({
+        message: "If an account exists with this email, a password reset link has been sent"
+      });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+    // Set reset token and expiry (1 hour)
+    doctor.resetPasswordToken = hashedToken;
+    doctor.resetPasswordExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await doctor.save();
+
+    // Send reset email
+    const emailSent = await sendPasswordResetEmail(email, resetToken, doctor.name);
+
+    if (!emailSent) {
+      logger.error("Failed to send password reset email", { email });
+      // Still return success to user to prevent email enumeration
+    }
+
+    logger.info("Password reset email sent", { doctorId: doctor._id, email });
+
+    res.json({
+      message: "If an account exists with this email, a password reset link has been sent"
+    });
+  } catch (err) {
+    logger.error("Forgot Password Error", { error: err.message, stack: err.stack });
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/**
+ * @swagger
+ * /auth/reset-password/{token}:
+ *   post:
+ *     summary: Reset password using token
+ *     description: Validates reset token and updates password. Token is single-use and expires after 1 hour.
+ *     tags: [Authentication]
+ *     parameters:
+ *       - in: path
+ *         name: token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Password reset token from email
+ *         example: abc123def456xyz789
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - password
+ *             properties:
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 8
+ *                 example: NewSecurePass123
+ *     responses:
+ *       200:
+ *         description: Password reset successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Password has been reset successfully
+ *       400:
+ *         description: Invalid token or weak password
+ *       429:
+ *         description: Too many requests
+ *       500:
+ *         description: Server error
+ */
+router.post("/reset-password/:token", authLimiter, async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!password || password.length < 8) {
+      return res.status(400).json({
+        message: "Password must be at least 8 characters long"
+      });
+    }
+
+    // Hash the token from URL to compare with stored hash
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Find doctor with valid reset token
+    const doctor = await Doctor.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpiry: { $gt: Date.now() }
+    });
+
+    if (!doctor) {
+      return res.status(400).json({
+        message: "Invalid or expired reset token"
+      });
+    }
+
+    // Update password
+    const hashedPassword = await bcrypt.hash(password, 10);
+    doctor.password = hashedPassword;
+
+    // Clear reset token fields
+    doctor.resetPasswordToken = undefined;
+    doctor.resetPasswordExpiry = undefined;
+
+    await doctor.save();
+
+    // Send confirmation email
+    await sendPasswordChangeConfirmation(doctor.email, doctor.name);
+
+    logger.info("Password reset successful", { doctorId: doctor._id });
+
+    res.json({ message: "Password has been reset successfully" });
+  } catch (err) {
+    logger.error("Reset Password Error", { error: err.message, stack: err.stack });
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 module.exports = router;

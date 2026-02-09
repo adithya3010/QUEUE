@@ -1,0 +1,21 @@
+# Smart Queue Backup Cron Jobs
+# Copy this file to /etc/cron.d/ or add these entries to crontab
+
+# Set shell and path
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# Email for cron notifications (optional)
+# MAILTO=admin@yourcompany.com
+
+# Daily backup at 2:00 AM
+0 2 * * * cd /path/to/Smart-Queue && ./backend/scripts/backup/backup.sh >> /var/log/smartqueue/backup.log 2>&1
+
+# Alternative: Docker backup at 2:00 AM (use this if running with Docker)
+# 0 2 * * * cd /path/to/Smart-Queue && ./backend/scripts/backup/backup-docker.sh >> /var/log/smartqueue/backup.log 2>&1
+
+# Weekly backup verification on Sundays at 3:00 AM
+# 0 3 * * 0 cd /path/to/Smart-Queue && ./backend/scripts/backup/verify-backup.sh >> /var/log/smartqueue/verify.log 2>&1
+
+# Monthly full backup on 1st of each month at 1:00 AM
+# 0 1 1 * * cd /path/to/Smart-Queue && BACKUP_DIR=/path/to/monthly-backups ./backend/scripts/backup/backup.sh >> /var/log/smartqueue/monthly-backup.log 2>&1

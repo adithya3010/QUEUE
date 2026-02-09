@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import Home from "./pages/Home";
 import Signup from "./pages/Signup";
 import DoctorLogin from "./pages/DoctorLogin";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import ReceptionPanel from "./pages/ReceptionPanel";
 import DoctorDashboard from "./pages/DoctorDashboard";
 import PatientStatusView from "./pages/PatientStatusView";
@@ -28,6 +30,8 @@ function Layout() {
         <Route path="/" element={<Home />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<DoctorLogin />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
 
         {/* Protected */}
         <Route

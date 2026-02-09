@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import api from "../services/api";
 import { useNavigate } from "react-router-dom";
 import Loader from "../components/Loader";
+import { setUser } from "../utils/sentry";
 
 export default function DoctorDashboard() {
 
@@ -43,8 +44,21 @@ export default function DoctorDashboard() {
   }
 
   async function logout() {
-    await api.post("/auth/logout");
-    navigate("/");
+    try {
+      await api.post("/auth/logout");
+    } catch (err) {
+      console.error("Logout error:", err);
+    } finally {
+      // Clear localStorage regardless of API call success
+      localStorage.removeItem("doctorId");
+      // Clear any other stored data
+      localStorage.clear();
+
+      // Clear user context from Sentry
+      setUser(null);
+
+      navigate("/");
+    }
   }
 
   if (!doctor) return <Loader />;

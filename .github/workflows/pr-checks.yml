@@ -1,0 +1,123 @@
+name: Pull Request Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pr-info:
+    name: PR Information
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v42
+        with:
+          files: |
+            backend/**
+            frontend/**
+
+      - name: List changed files
+        run: |
+          echo "Changed files:"
+          echo "${{ steps.changed-files.outputs.all_changed_files }}"
+
+  backend-quality:
+    name: Backend Code Quality
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.changed_files, 'backend/')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Run tests with coverage
+        working-directory: ./backend
+        run: npm test -- --coverage
+        env:
+          JWT_SECRET: 'test-jwt-secret-for-pr'
+          NODE_ENV: test
+
+      - name: Comment PR with coverage
+        uses: romeovs/lcov-reporter-action@v0.3.1
+        if: always()
+        with:
+          lcov-file: ./backend/coverage/lcov.info
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+  frontend-quality:
+    name: Frontend Code Quality
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.changed_files, 'frontend/')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: frontend/vite-project/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend/vite-project
+        run: npm ci
+
+      - name: Run tests with coverage
+        working-directory: ./frontend/vite-project
+        run: npm test
+
+      - name: Run linter
+        working-directory: ./frontend/vite-project
+        run: npm run lint
+        continue-on-error: true
+
+  size-check:
+    name: Bundle Size Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend/vite-project
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: ./frontend/vite-project
+        run: npm run build
+
+      - name: Check bundle size
+        working-directory: ./frontend/vite-project
+        run: |
+          echo "### Bundle Size Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          du -sh dist/* >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

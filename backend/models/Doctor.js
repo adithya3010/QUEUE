@@ -5,12 +5,16 @@ const doctorSchema = new mongoose.Schema({
     specialization : {type : String , required :true},
     availability : {
         type: String ,
-        enum :["Available","Not Available","Break"], 
+        enum :["Available","Not Available","Break"],
         default: "Available"
     },
     avgConsultationTime : {type: Number,default : 8},
-    email : {type : String,required :true},
-    password : {type:String , required:true}
+    email : {type : String,required :true, unique: true},
+    password : {type:String , required:true},
+    refreshToken : {type: String},
+    refreshTokenExpiry : {type: Date},
+    resetPasswordToken : {type: String},
+    resetPasswordExpiry : {type: Date}
 });
 
 module.exports = mongoose.model("Doctor",doctorSchema);

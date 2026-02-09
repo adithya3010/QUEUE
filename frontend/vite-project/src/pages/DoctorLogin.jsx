@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../services/api";
+import { setUser } from "../utils/sentry";
 
 export default function DoctorLogin() {
   const navigate = useNavigate();
@@ -15,6 +16,10 @@ export default function DoctorLogin() {
     try {
       const res = await api.post("/auth/login", form);
       localStorage.setItem("doctorId", res.data.doctor.id);
+
+      // Set user context for Sentry error tracking
+      setUser(res.data.doctor);
+
       setMsg("Login Successful 🎉 Redirecting...");
       setTimeout(() => navigate("/reception"), 800);
     } catch (err) {
@@ -87,6 +92,15 @@ export default function DoctorLogin() {
             Login
           </button>
         </form>
+
+        <div className="mt-4 text-center">
+          <Link
+            to="/forgot-password"
+            className="text-sm text-cyan-300 hover:text-cyan-200 underline"
+          >
+            Forgot Password?
+          </Link>
+        </div>
 
         <p className="mt-4 text-sm text-center text-gray-300">
           Don’t have an account?{" "}
