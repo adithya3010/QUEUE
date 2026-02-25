@@ -73,14 +73,13 @@ const UserSchema = new mongoose.Schema({
 
 }, { timestamps: true });
 
-UserSchema.pre("save", async function (next) {
-    if (!this.isModified("password")) return next();
+UserSchema.pre("save", async function () {
+    if (!this.isModified("password")) return;
+
     if (!this.password.startsWith("$2b$")) {
         this.password = await bcrypt.hash(this.password, 10);
     }
-    next();
 });
-
 UserSchema.index({ hospitalId: 1, email: 1 }, { unique: true });
 
 module.exports = mongoose.model("User", UserSchema);

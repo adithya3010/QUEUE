@@ -109,6 +109,11 @@ router.post("/signup", authLimiter, async (req, res) => {
       return res.status(400).json({ message: "Email already exists" });
     }
 
+    const existingHospital = await Hospital.findOne({ email });
+    if (existingHospital) {
+      return res.status(400).json({ message: "A hospital with this email is already registered." });
+    }
+
     const hospital = await Hospital.create({
       name: hospitalName,
       email: email
