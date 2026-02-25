@@ -76,38 +76,40 @@ export default function DoctorDashboard() {
     if (!doctor) return <Loader />;
 
     return (
-        <div className="w-full min-h-screen bg-[#060c21] text-white selection:bg-blue-500/30 relative overflow-x-hidden pt-10">
-            {/* Ambient Background Glows */}
-            <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-600/10 blur-[150px] rounded-full pointer-events-none" />
-            <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-cyan-600/10 blur-[150px] rounded-full pointer-events-none" />
+        <div className="w-full min-h-screen text-white selection:bg-primary-500/30 relative overflow-x-hidden">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
 
-            <div className="max-w-5xl mx-auto px-6 pb-20 relative z-10 animate-fade-up">
-
-                <div className="flex justify-between items-center mb-10 border-b border-white/10 pb-6">
-                    <div>
-                        <h2 className="text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400">
-                            Doctor Profile
-                        </h2>
-                        <p className="text-gray-400 mt-2 font-medium">Manage your availability and settings</p>
+                {/* Header */}
+                <div className="mb-8">
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="w-12 h-12 bg-gradient-to-br from-light-blue-500/20 to-primary-500/20 border border-light-blue-500/30 rounded-xl flex items-center justify-center">
+                            <Stethoscope className="w-6 h-6 text-light-blue-400" />
+                        </div>
+                        <div>
+                            <h1 className="text-3xl md:text-4xl font-extrabold text-white">
+                                Doctor Dashboard
+                            </h1>
+                            <p className="text-gray-400 text-sm font-medium mt-0.5">Manage availability & consultation settings</p>
+                        </div>
                     </div>
                 </div>
 
                 {msg && (
-                    <div className="mb-6 p-4 rounded-xl bg-blue-500/10 border border-blue-500/30 text-cyan-400 font-bold animate-fade-up flex items-center gap-3 shadow-inner">
-                        <Activity className="w-5 h-5" /> {msg}
+                    <div className="mb-6 p-4 rounded-xl bg-primary-500/10 border border-primary-500/30 text-light-blue-400 font-semibold animate-fade-up flex items-center justify-center gap-2 text-sm">
+                        <CheckCircle className="w-4 h-4" /> {msg}
                     </div>
                 )}
 
-                <div className="grid md:grid-cols-3 gap-8">
+                <div className="grid md:grid-cols-3 gap-6">
 
                     {/* Profile Card */}
-                    <div className="md:col-span-1 bg-white/5 backdrop-blur-2xl border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] rounded-3xl p-8">
+                    <div className="md:col-span-1 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
                         <div className="flex flex-col items-center text-center">
-                            <div className="w-24 h-24 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30 rounded-full flex items-center justify-center mb-4 text-cyan-400 shadow-[0_0_15px_rgba(37,99,235,0.2)]">
-                                <Stethoscope className="w-12 h-12" />
+                            <div className="w-20 h-20 bg-gradient-to-br from-light-blue-500/20 to-primary-500/20 border border-light-blue-500/30 rounded-2xl flex items-center justify-center mb-3 shadow-lg shadow-light-blue-500/10">
+                                <Stethoscope className="w-10 h-10 text-light-blue-400" />
                             </div>
-                            <h3 className="text-2xl font-black text-white">{doctor.name}</h3>
-                            <p className="text-cyan-400 font-medium mt-1 uppercase tracking-widest text-xs">{doctor.specialization}</p>
+                            <h3 className="text-xl font-bold text-white">{doctor.name}</h3>
+                            <p className="text-light-blue-400 font-semibold mt-1 text-sm">{doctor.specialization}</p>
 
                             <div className="mt-8 w-full space-y-4 text-left">
                                 <div className="flex items-center gap-3 text-gray-300 bg-black/30 border border-white/10 p-3 rounded-xl shadow-inner">
@@ -123,86 +125,81 @@ export default function DoctorDashboard() {
                                         <Activity className="w-5 h-5 text-gray-500" />
                                         <span className="text-sm font-bold">Status</span>
                                     </div>
-                                    <span className={`px-2.5 py-1 text-[10px] uppercase tracking-widest font-black rounded-md shadow-inner border border-white/5 ${doctor.availability === "Available" ? "bg-emerald-500/20 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.3)]" : "bg-red-500/20 text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.3)]"}`}>
+                                    <span className={`px-2.5 py-1 text-[10px] uppercase tracking-widest font-black rounded-md shadow-inner border border-white/5 ${doctor.availability === "Available" ? "bg-success-500/20 text-success-400 shadow-[0_0_10px_rgba(18,152,32,0.3)]" : "bg-red-500/20 text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.3)]"}`}>
                                         {doctor.availability || "Not Configured"}
                                     </span>
                                 </div>
                             </div>
 
-                            <button
-                                onClick={logout}
-                                className="mt-8 w-full py-4 rounded-xl font-bold bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white hover:border-white/20 transition-all flex items-center justify-center gap-2 active:scale-95"
-                            >
-                                <Power className="w-5 h-5 text-red-400" /> Logout
-                            </button>
+
                         </div>
                     </div>
 
                     {/* Settings Area */}
-                    <div className="md:col-span-2 space-y-8">
+                    <div className="md:col-span-2 space-y-6">
 
                         {/* Availability Settings */}
-                        <div className="bg-white/5 backdrop-blur-2xl border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] rounded-3xl p-8">
-                            <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-3 border-b border-white/5 pb-4">
-                                <Settings className="w-6 h-6 text-cyan-400" /> Queue Mode
-                            </h3>
+                        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+                            <div className="flex items-center gap-2 mb-4">
+                                <Settings className="w-5 h-5 text-light-blue-400" />
+                                <h3 className="text-lg font-bold text-white">Queue Mode</h3>
+                            </div>
 
-                            <p className="text-gray-400 mb-6 text-sm font-medium">
-                                Control whether the reception can add patients to your queue. Disabling this will pause the queue.
+                            <p className="text-gray-400 mb-5 text-sm">
+                                Control whether reception can add patients to your queue.
                             </p>
 
-                            <div className="flex gap-4">
+                            <div className="flex gap-3">
                                 <button
                                     onClick={() => changeAvailability("Available")}
-                                    className={`flex-1 py-4 rounded-xl font-bold border-2 transition-all shadow-inner uppercase tracking-wider text-xs sm:text-sm ${doctor.availability === "Available"
-                                        ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.2)]"
-                                        : "border-white/10 bg-black/20 text-gray-500 hover:border-emerald-500/30 hover:text-emerald-400/70"
+                                    className={`flex-1 py-3 rounded-xl font-bold border transition-all text-sm ${doctor.availability === "Available"
+                                        ? "border-success-500/50 bg-success-500/10 text-success-400"
+                                        : "border-white/10 bg-black/20 text-gray-400 hover:border-success-500/30"
                                         }`}
                                 >
-                                    Available Mode
+                                    Available
                                 </button>
                                 <button
                                     onClick={() => changeAvailability("Not Available")}
-                                    className={`flex-1 py-4 rounded-xl font-bold border-2 transition-all shadow-inner uppercase tracking-wider text-xs sm:text-sm ${doctor.availability === "Not Available"
-                                        ? "border-red-500/50 bg-red-500/10 text-red-400 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
-                                        : "border-white/10 bg-black/20 text-gray-500 hover:border-red-500/30 hover:text-red-400/70"
+                                    className={`flex-1 py-3 rounded-xl font-bold border transition-all text-sm ${doctor.availability === "Not Available"
+                                        ? "border-red-500/50 bg-red-500/10 text-red-400"
+                                        : "border-white/10 bg-black/20 text-gray-400 hover:border-red-500/30"
                                         }`}
                                 >
-                                    Pause Queue
+                                    Paused
                                 </button>
                             </div>
                         </div>
 
                         {/* Consultation Time Settings */}
-                        <div className="bg-white/5 backdrop-blur-2xl border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] rounded-3xl p-8">
-                            <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-3 border-b border-white/5 pb-4">
-                                <Clock className="w-6 h-6 text-cyan-400" /> Consultation Time
-                            </h3>
+                        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+                            <div className="flex items-center gap-2 mb-4">
+                                <Clock className="w-5 h-5 text-light-blue-400" />
+                                <h3 className="text-lg font-bold text-white">Consultation Time</h3>
+                            </div>
 
-                            <div className="flex flex-col sm:flex-row items-center justify-between gap-6 p-6 bg-black/30 rounded-2xl border border-white/10 shadow-inner">
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-black/30 rounded-xl border border-white/10">
                                 <div>
-                                    <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest mb-1.5">Average Time</p>
-                                    <p className="text-4xl font-black text-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.4)]">
-                                        {doctor.avgConsultationTime ? `${doctor.avgConsultationTime}` : "--"} <span className="text-lg font-bold text-gray-500">mins</span>
+                                    <p className="text-gray-500 text-xs font-semibold mb-1">Current Average</p>
+                                    <p className="text-3xl font-black text-light-blue-400">
+                                        {doctor.avgConsultationTime || "--"} <span className="text-sm font-semibold text-gray-500">minutes</span>
                                     </p>
                                 </div>
 
-                                <div className="flex gap-3 w-full sm:w-auto">
+                                <div className="flex gap-2 w-full sm:w-auto">
                                     <input
                                         type="number"
                                         min="1"
                                         value={avgTime}
                                         onChange={(e) => setAvgTime(e.target.value)}
-                                        className="w-24 p-4 rounded-xl text-center font-black text-lg
-                                            bg-black/50 border border-white/10 text-white
-                                            focus:ring-2 focus:ring-blue-500/50 outline-none shadow-inner transition-all focus:border-blue-400"
+                                        className="w-20 px-3 py-2 rounded-lg text-center font-bold text-white bg-black/50 border border-white/10 focus:ring-2 focus:ring-primary-500/50 outline-none transition-all text-sm"
                                         placeholder="Mins"
                                     />
                                     <button
                                         onClick={updateAvgTime}
-                                        className="px-6 py-4 rounded-xl font-bold bg-gradient-to-b from-blue-500 to-blue-700 hover:from-blue-400 hover:to-blue-600 text-white shadow-[0_10px_30px_rgba(37,99,235,0.4)] border border-blue-400/50 transition-transform active:scale-95 uppercase tracking-wider text-xs"
+                                        className="px-5 py-2 rounded-lg font-bold bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-400 hover:to-primary-500 text-white shadow-lg shadow-primary-500/30 transition-all active:scale-95 text-sm"
                                     >
-                                        Save
+                                        Update
                                     </button>
                                 </div>
                             </div>

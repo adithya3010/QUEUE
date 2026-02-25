@@ -6,12 +6,20 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  --color-primary-500: #0ea5e9;
-  --color-primary-600: #0284c7;
-  --color-cyan-400: #22d3ee;
-  --color-cyan-500: #06b6d4;
+  /* Custom Brand Colors - Change here to update entire site */
+  --color-primary: #0B8FAC;
+  --color-primary-light: #33C1DF;
+  --color-primary-dark: #075667;
+  
+  --color-secondary: #7BC1B7;
+  --color-secondary-light: #A5E1D8;
+  --color-secondary-dark: #4A8278;
+  
+  --color-light: #D2EBE7;
+  --color-light-blue: #8ED7F0;
+  --color-success: #129820;
 
-  --color-dark-bg: #020617;
+  --color-dark-bg: #060c21;
   --color-dark-card: rgba(255, 255, 255, 0.05);
 
   --animate-fadeIn: fadeIn 0.8s ease-out forwards;
@@ -35,7 +43,7 @@
 }
 
 .dark {
-  --background: #020617;
+  --background: #060c21;
   --foreground: #f8fafc;
 }
 
@@ -43,4 +51,24 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Custom scrollbar with brand colors */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #0B8FAC;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #33C1DF;
 }

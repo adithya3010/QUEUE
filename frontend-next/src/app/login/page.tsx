@@ -44,9 +44,9 @@ export default function StaffLogin() {
     };
 
     return (
-        <div className="min-h-screen flex justify-center items-center p-6 relative bg-[#060c21] text-white overflow-hidden selection:bg-blue-500/30">
+        <div className="min-h-screen flex justify-center items-center p-6 relative bg-[#060c21] text-white overflow-hidden selection:bg-primary-500/30">
             {/* Ambient Background Glows */}
-            <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-600/20 blur-[150px] rounded-full pointer-events-none" />
+            <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary-600/20 blur-[150px] rounded-full pointer-events-none" />
             <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-cyan-600/20 blur-[150px] rounded-full pointer-events-none" />
 
             {/* Back to Home */}
@@ -59,7 +59,7 @@ export default function StaffLogin() {
 
                 {/* Logo & Header */}
                 <div className="flex flex-col items-center mb-8">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/30 mb-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-light-blue-400 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/30 mb-4">
                     </div>
                     <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400">
                         Staff Login
@@ -70,7 +70,7 @@ export default function StaffLogin() {
                 </div>
 
                 {msg && (
-                    <div className={`mb-6 p-4 rounded-xl border text-sm font-bold text-center backdrop-blur-sm shadow-inner transition-all ${msg.includes('Successful') ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
+                    <div className={`mb-6 p-4 rounded-xl border text-sm font-bold text-center backdrop-blur-sm shadow-inner transition-all ${msg.includes('Successful') ? 'bg-success-500/10 border-success-500/30 text-success-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
                         {msg}
                     </div>
                 )}
@@ -83,7 +83,7 @@ export default function StaffLogin() {
                             placeholder="Email Address"
                             value={form.email}
                             onChange={handleChange}
-                            className="w-full p-4 rounded-xl bg-black/30 border border-white/10 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-400 outline-none transition-all shadow-inner"
+                            className="w-full p-4 rounded-xl bg-black/30 border border-white/10 text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500/50 focus:border-primary-400 outline-none transition-all shadow-inner"
                             required
                             pattern="^[^\s@]+@[^\s@]+\.[^\s@]{2,}$"
                             title="Enter a valid email"
@@ -97,14 +97,14 @@ export default function StaffLogin() {
                             placeholder="Password"
                             value={form.password}
                             onChange={handleChange}
-                            className="w-full p-4 rounded-xl bg-black/30 border border-white/10 text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-400 outline-none transition-all shadow-inner"
+                            className="w-full p-4 rounded-xl bg-black/30 border border-white/10 text-white placeholder-gray-500 focus:ring-2 focus:ring-primary-500/50 focus:border-primary-400 outline-none transition-all shadow-inner"
                             required
                         />
                     </div>
 
                     <button
                         disabled={loading}
-                        className="w-full py-4 mt-2 rounded-xl font-bold text-lg bg-gradient-to-b from-blue-500 to-blue-700 hover:from-blue-400 hover:to-blue-600 border border-blue-400/50 text-white shadow-[0_10px_30px_rgba(37,99,235,0.4)] transition-transform active:scale-95 disabled:opacity-70 disabled:pointer-events-none"
+                        className="w-full py-4 mt-2 rounded-xl font-bold text-lg bg-gradient-to-b from-primary-500 to-primary-700 hover:from-primary-400 hover:to-primary-600 border border-primary-400/50 text-white shadow-[0_10px_30px_rgba(37,99,235,0.4)] transition-transform active:scale-95 disabled:opacity-70 disabled:pointer-events-none"
                     >
                         {loading ? "Authenticating..." : "Sign In"}
                     </button>
@@ -113,7 +113,7 @@ export default function StaffLogin() {
                 <div className="mt-6 text-center">
                     <Link
                         href="/forgot-password"
-                        className="text-sm font-semibold text-gray-400 hover:text-cyan-400 transition-colors"
+                        className="text-sm font-semibold text-gray-400 hover:text-light-blue-400 transition-colors"
                     >
                         Forgot Password?
                     </Link>
@@ -122,7 +122,7 @@ export default function StaffLogin() {
                 <div className="mt-8 pt-6 border-t border-white/10 text-center">
                     <p className="text-sm font-medium text-gray-400">
                         Don’t have a clinical account?{" "}
-                        <Link className="text-blue-400 hover:text-white font-bold transition-colors" href="/signup">
+                        <Link className="text-primary-400 hover:text-white font-bold transition-colors" href="/signup">
                             Sign up here
                         </Link>
                     </p>

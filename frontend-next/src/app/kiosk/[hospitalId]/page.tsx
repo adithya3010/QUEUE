@@ -89,7 +89,7 @@ export default function KioskPage() {
     if (loadingDocs && doctors.length === 0) {
         return (
             <div className="min-h-screen bg-[#0c0516] flex items-center justify-center">
-                <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-16 h-16 border-4 border-light-blue-500 border-t-transparent rounded-full animate-spin"></div>
             </div>
         );
     }
@@ -100,21 +100,21 @@ export default function KioskPage() {
             <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))] opacity-10"></div>
 
             {/* Ambient Glow */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-cyan-500/10 blur-[120px] rounded-full pointer-events-none" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-light-blue-500/10 blur-[120px] rounded-full pointer-events-none" />
 
             <div className="text-center mb-12 relative z-10 animate-fadeInDown">
                 <h1 className="text-5xl font-black text-white mb-4 tracking-tight drop-shadow-lg">
                     Welcome to the Clinic
                 </h1>
-                <p className="text-xl text-cyan-200 font-medium">Self-Service Check-In Kiosk</p>
+                <p className="text-xl text-light-blue-200 font-medium">Self-Service Check-In Kiosk</p>
             </div>
 
             {tokenResult ? (
                 // SUCCESS SCREEN
                 <div className="max-w-xl w-full bg-white/10 backdrop-blur-2xl border border-white/20 rounded-[40px] p-12 text-center animate-zoomIn relative z-10 shadow-2xl">
-                    <CheckCircle2 className="w-24 h-24 text-emerald-400 mx-auto mb-6 animate-pulse" />
+                    <CheckCircle2 className="w-24 h-24 text-success-400 mx-auto mb-6 animate-pulse" />
                     <h2 className="text-4xl font-bold text-white mb-4">You're Checked In!</h2>
-                    <p className="text-xl text-emerald-200 mb-8 font-medium">Please proceed to the waiting area.</p>
+                    <p className="text-xl text-success-200 mb-8 font-medium">Please proceed to the waiting area.</p>
 
                     <div className="bg-black/40 rounded-3xl p-8 mb-8 border border-white/10 shadow-inner">
                         <p className="text-gray-400 font-bold uppercase tracking-widest text-sm mb-2">Your Token Number</p>
@@ -134,19 +134,19 @@ export default function KioskPage() {
                 <div className="max-w-2xl w-full bg-[#1e293b]/90 backdrop-blur-2xl border border-white/10 rounded-[40px] p-10 relative z-10 shadow-2xl animate-slideUp">
                     <button
                         onClick={() => setSelectedDoc(null)}
-                        className="mb-8 text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-2 transition-colors"
+                        className="mb-8 text-light-blue-400 hover:text-light-blue-300 font-bold flex items-center gap-2 transition-colors"
                     >
                         ← Back to Doctors
                     </button>
 
                     <div className="flex items-center gap-6 p-6 bg-black/30 rounded-3xl mb-10 border border-white/5">
-                        <div className="w-20 h-20 bg-cyan-500/20 rounded-full flex items-center justify-center border border-cyan-500/30 flex-shrink-0">
-                            <Stethoscope className="w-10 h-10 text-cyan-400" />
+                        <div className="w-20 h-20 bg-light-blue-500/20 rounded-full flex items-center justify-center border border-light-blue-500/30 flex-shrink-0">
+                            <Stethoscope className="w-10 h-10 text-light-blue-400" />
                         </div>
                         <div>
                             <h2 className="text-3xl font-bold text-white mb-1">{selectedDoc.name}</h2>
                             <p className="text-gray-400 font-medium text-lg">{selectedDoc.specialization}</p>
-                            <p className="text-emerald-400 font-bold mt-2 flex items-center gap-2">
+                            <p className="text-success-400 font-bold mt-2 flex items-center gap-2">
                                 <Clock className="w-5 h-5" />
                                 {selectedDoc.estimatedWaitMins} min estimated wait
                             </p>
@@ -166,7 +166,7 @@ export default function KioskPage() {
                             <div className="relative">
                                 <div className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-500"><User className="w-6 h-6" /></div>
                                 <input required type="text" name="name" value={formData.name} onChange={handleChange}
-                                    className="w-full pl-16 pr-6 py-5 rounded-2xl bg-white/5 border border-white/10 text-xl text-white outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 transition-all placeholder:text-gray-600"
+                                    className="w-full pl-16 pr-6 py-5 rounded-2xl bg-white/5 border border-white/10 text-xl text-white outline-none focus:border-light-blue-500 focus:ring-2 focus:ring-light-blue-500/30 transition-all placeholder:text-gray-600"
                                     placeholder="Tap to enter name..." />
                             </div>
                         </div>
@@ -176,7 +176,7 @@ export default function KioskPage() {
                             <div className="relative">
                                 <div className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-500"><Phone className="w-6 h-6" /></div>
                                 <input type="tel" name="phone" value={formData.phone} onChange={handleChange}
-                                    className="w-full pl-16 pr-6 py-5 rounded-2xl bg-white/5 border border-white/10 text-xl text-white outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 transition-all placeholder:text-gray-600"
+                                    className="w-full pl-16 pr-6 py-5 rounded-2xl bg-white/5 border border-white/10 text-xl text-white outline-none focus:border-light-blue-500 focus:ring-2 focus:ring-light-blue-500/30 transition-all placeholder:text-gray-600"
                                     placeholder="Tap to enter phone..." />
                             </div>
                         </div>
@@ -186,7 +186,7 @@ export default function KioskPage() {
                             <div className="relative">
                                 <div className="absolute left-6 top-6 text-gray-500"><FileText className="w-6 h-6" /></div>
                                 <textarea name="description" value={formData.description} onChange={handleChange} rows={3}
-                                    className="w-full pl-16 pr-6 py-5 rounded-2xl bg-white/5 border border-white/10 text-xl text-white outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 transition-all placeholder:text-gray-600 resize-none"
+                                    className="w-full pl-16 pr-6 py-5 rounded-2xl bg-white/5 border border-white/10 text-xl text-white outline-none focus:border-light-blue-500 focus:ring-2 focus:ring-light-blue-500/30 transition-all placeholder:text-gray-600 resize-none"
                                     placeholder="Brief symptom description..."></textarea>
                             </div>
                         </div>
@@ -194,7 +194,7 @@ export default function KioskPage() {
                         <button
                             disabled={submitLoading}
                             type="submit"
-                            className="w-full py-6 mt-6 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 shadow-[0_0_40px_rgba(6,182,212,0.4)] text-white font-black text-2xl tracking-wide flex items-center justify-center gap-4 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+                            className="w-full py-6 mt-6 rounded-2xl bg-gradient-to-r from-light-blue-500 to-primary-600 hover:from-light-blue-400 hover:to-primary-500 shadow-[0_0_40px_rgba(6,182,212,0.4)] text-white font-black text-2xl tracking-wide flex items-center justify-center gap-4 transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
                         >
                             {submitLoading ? "Checking In..." : "Complete Check-In"}
                             <ArrowRight className="w-8 h-8" />
@@ -205,7 +205,7 @@ export default function KioskPage() {
                 // DOCTOR SELECTION SCREEN
                 <div className="w-full max-w-6xl relative z-10 animate-slideUp">
                     <h2 className="text-2xl font-bold text-gray-300 mb-8 text-center flex items-center justify-center gap-3">
-                        <UserPlus className="w-8 h-8 text-cyan-500" /> Who would you like to see today?
+                        <UserPlus className="w-8 h-8 text-light-blue-500" /> Who would you like to see today?
                     </h2>
 
                     {doctors.length === 0 ? (
@@ -218,13 +218,13 @@ export default function KioskPage() {
                                 <button
                                     key={doc._id}
                                     onClick={() => handleSelectDoctor(doc)}
-                                    className="block w-full text-left bg-white/5 hover:bg-white/10 backdrop-blur-xl border border-white/10 hover:border-cyan-500/50 rounded-[32px] p-8 transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(6,182,212,0.15)] group"
+                                    className="block w-full text-left bg-white/5 hover:bg-white/10 backdrop-blur-xl border border-white/10 hover:border-light-blue-500/50 rounded-[32px] p-8 transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(6,182,212,0.15)] group"
                                 >
-                                    <div className="w-20 h-20 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-full flex items-center justify-center mb-6 shadow-lg shadow-cyan-500/20 group-hover:scale-110 transition-transform">
+                                    <div className="w-20 h-20 bg-gradient-to-br from-light-blue-500 to-primary-600 rounded-full flex items-center justify-center mb-6 shadow-lg shadow-light-blue-500/20 group-hover:scale-110 transition-transform">
                                         <span className="text-3xl font-black text-white">{doc.name.charAt(0).toUpperCase()}</span>
                                     </div>
                                     <h3 className="text-2xl font-bold text-white mb-2">{doc.name}</h3>
-                                    <p className="text-cyan-400 font-medium text-lg mb-6">{doc.specialization}</p>
+                                    <p className="text-light-blue-400 font-medium text-lg mb-6">{doc.specialization}</p>
 
                                     <div className="flex items-center justify-between border-t border-white/10 pt-6">
                                         <div>
@@ -233,7 +233,7 @@ export default function KioskPage() {
                                         </div>
                                         <div className="text-right">
                                             <p className="text-sm text-gray-400 mb-1">Est. Wait</p>
-                                            <p className="font-bold text-emerald-400 text-xl">{doc.estimatedWaitMins} min</p>
+                                            <p className="font-bold text-success-400 text-xl">{doc.estimatedWaitMins} min</p>
                                         </div>
                                     </div>
                                 </button>

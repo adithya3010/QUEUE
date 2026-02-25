@@ -67,7 +67,7 @@ export default function ResetPassword() {
                         Redirecting to login...
                     </p>
                     <div className="mt-8">
-                        <Link href="/login" className="font-bold text-primary-600 dark:text-cyan-400 hover:underline">Go to Login Now</Link>
+                        <Link href="/login" className="font-bold text-primary-600 dark:text-light-blue-400 hover:underline">Go to Login Now</Link>
                     </div>
                 </div>
             </div>
@@ -82,7 +82,7 @@ export default function ResetPassword() {
             <div className="absolute top-6 right-6 z-50"><ThemeToggle /></div>
 
             <div className="absolute w-96 h-96 bg-primary-500/20 blur-[140px] rounded-full top-10 left-10"></div>
-            <div className="absolute w-96 h-96 bg-cyan-400/20 blur-[140px] rounded-full bottom-10 right-10"></div>
+            <div className="absolute w-96 h-96 bg-light-blue-400/20 blur-[140px] rounded-full bottom-10 right-10"></div>
 
             <div className="relative w-full max-w-[420px]
         bg-white/80 dark:bg-white/5 backdrop-blur-2xl
@@ -176,7 +176,7 @@ export default function ResetPassword() {
                         type="submit"
                         disabled={isLoading}
                         className="w-full py-4 rounded-xl font-bold text-lg
-              bg-gradient-to-r from-primary-600 to-cyan-500 hover:from-primary-500 hover:to-cyan-400
+              bg-gradient-to-r from-primary-600 to-light-blue-500 hover:from-primary-500 hover:to-light-blue-400
               text-white shadow-xl shadow-primary-500/20 dark:shadow-primary-900/40
               hover:scale-[1.02] hover:shadow-2xl active:scale-95
               transition-all duration-300 disabled:opacity-70 flex justify-center items-center"
@@ -195,7 +195,7 @@ export default function ResetPassword() {
                     </button>
 
                     <div className="text-center mt-4">
-                        <Link href="/login" className="text-sm font-bold text-primary-600 dark:text-cyan-400 hover:underline">
+                        <Link href="/login" className="text-sm font-bold text-primary-600 dark:text-light-blue-400 hover:underline">
                             Back to Login
                         </Link>
                     </div>
