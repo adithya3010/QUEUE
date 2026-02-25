@@ -1,17 +1,25 @@
 const jwt = require('jsonwebtoken');
 const logger = require('../utils/logger');
+const Doctor = require('../models/Doctor');
 
 module.exports = (io) => {
   // Socket authentication middleware
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     // Get token from handshake auth or cookies
     const token = socket.handshake.auth.token || socket.handshake.headers.cookie?.split('token=')[1]?.split(';')[0];
 
-    // If token exists, verify it and attach doctorId to socket
+    // If token exists, verify it and attach doctorId and hospitalId to socket
     if (token) {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         socket.doctorId = decoded.doctorId;
+
+        // Fetch doctor to get hospitalId for multi-tenancy
+        const doctor = await Doctor.findById(decoded.doctorId).select('hospitalId');
+        if (doctor && doctor.hospitalId) {
+          socket.hospitalId = doctor.hospitalId.toString();
+        }
+
         socket.authenticated = true;
       } catch (err) {
         logger.warn('Socket authentication failed', {
@@ -49,8 +57,15 @@ module.exports = (io) => {
       }
 
       socket.join(doctorId);
-      logger.info('Doctor joined room', {
+
+      // Also join the highly secure Hospital Namespace for B2B dashboards
+      if (socket.hospitalId) {
+        socket.join(`hospital_${socket.hospitalId}`);
+      }
+
+      logger.info('Doctor joined room and hospital namespace', {
         doctorId,
+        hospitalId: socket.hospitalId,
         socketId: socket.id
       });
     });

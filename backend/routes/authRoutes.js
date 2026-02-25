@@ -3,11 +3,13 @@ const router = express.Router();
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
-const Doctor = require("../models/Doctor");
-const { doctorSignupSchema, doctorLoginSchema } = require("../validators/doc_validator");
+const User = require("../models/User");
+const Hospital = require("../models/Hospital");
+const { adminSignupSchema, adminLoginSchema } = require("../validators/admin_validator");
 const logger = require("../utils/logger");
 const { generateTokenPair, verifyRefreshToken } = require("../utils/tokenUtils");
 const { sendPasswordResetEmail, sendPasswordChangeConfirmation } = require("../utils/emailService");
+const { auth } = require("../middleware/authMiddleware");
 
 // Cookie settings based on environment
 const isProduction = process.env.NODE_ENV === 'production';
@@ -32,12 +34,12 @@ const refreshTokenCookieOptions = {
 const authLimiter = process.env.NODE_ENV === 'test'
   ? (req, res, next) => next()  // No-op middleware for tests
   : rateLimit({
-      windowMs: 15 * 60 * 1000, // 15 minutes
-      max: 5, // Limit each IP to 5 requests per windowMs
-      message: { message: "Too many authentication attempts, please try again after 15 minutes" },
-      standardHeaders: true,
-      legacyHeaders: false,
-    });
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs for local testing
+    message: { message: "Too many authentication attempts, please try again after 15 minutes" },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
 
 /**
  * @swagger
@@ -99,27 +101,35 @@ const authLimiter = process.env.NODE_ENV === 'test'
 router.post("/signup", authLimiter, async (req, res) => {
   try {
     // Validate input with Zod
-    const validatedData = doctorSignupSchema.parse(req.body);
-    const { name, specialization, email, password } = validatedData;
+    const validatedData = adminSignupSchema.parse(req.body);
+    const { name, email, password, hospitalName } = validatedData;
 
-    const existing = await Doctor.findOne({ email });
+    const existing = await User.findOne({ email });
     if (existing) {
       return res.status(400).json({ message: "Email already exists" });
     }
+
+    const hospital = await Hospital.create({
+      name: hospitalName,
+      email: email
+    });
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    const doctor = await Doctor.create({
+    const user = await User.create({
+      hospitalId: hospital._id,
+      role: "HOSPITAL_ADMIN",
       name,
-      specialization,
       email,
       password: hashedPassword,
     });
     res.json({
       message: "Signup successful",
-      doctor: {
-        id: doctor._id,
-        name: doctor.name,
-        specialization: doctor.specialization,
-        email: doctor.email,
+      user: {
+        id: user._id,
+        role: user.role,
+        hospitalId: user.hospitalId,
+        name: user.name,
+        email: user.email,
       },
     });
   } catch (err) {
@@ -191,41 +201,45 @@ router.post("/signup", authLimiter, async (req, res) => {
 router.post("/login", authLimiter, async (req, res) => {
   try {
     // Validate input with Zod
-    const validatedData = doctorLoginSchema.parse(req.body);
+    const validatedData = adminLoginSchema.parse(req.body);
     const { email, password } = validatedData;
 
-    const doctor = await Doctor.findOne({ email });
-    if (!doctor) {
+    const user = await User.findOne({ email });
+    if (!user) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
-    const isMatch = await bcrypt.compare(password, doctor.password);
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
     // Generate access and refresh tokens
     const { accessToken, refreshToken, refreshTokenExpiry } = generateTokenPair({
-      doctorId: doctor._id
+      userId: user._id,
+      role: user.role,
+      hospitalId: user.hospitalId
     });
 
     // Store refresh token in database
-    doctor.refreshToken = refreshToken;
-    doctor.refreshTokenExpiry = refreshTokenExpiry;
-    await doctor.save();
+    user.refreshToken = refreshToken;
+    user.refreshTokenExpiry = refreshTokenExpiry;
+    await user.save();
 
     // Set tokens in cookies
     res.cookie("token", accessToken, accessTokenCookieOptions);
     res.cookie("refreshToken", refreshToken, refreshTokenCookieOptions);
 
-    logger.info("Doctor logged in successfully", { doctorId: doctor._id });
+    logger.info("User logged in successfully", { userId: user._id, role: user.role });
 
     res.json({
       message: "Login successful",
-      doctor: {
-        id: doctor._id,
-        name: doctor.name,
-        specialization: doctor.specialization,
-        email: doctor.email,
+      user: {
+        id: user._id,
+        hospitalId: user.hospitalId,
+        role: user.role,
+        name: user.name,
+        email: user.email,
+        assignedDoctors: user.assignedDoctors || []
       },
     });
   } catch (err) {
@@ -240,6 +254,42 @@ router.post("/login", authLimiter, async (req, res) => {
       });
     }
     logger.error("Login Error", { error: err.message, stack: err.stack });
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/**
+ * @swagger
+ * /auth/me:
+ *   get:
+ *     summary: Get current authenticated user details
+ *     tags: [Authentication]
+ *     security:
+ *       - cookieAuth: []
+ *     responses:
+ *       200:
+ *         description: User details retrieved
+ *       401:
+ *         description: Not authenticated
+ */
+router.get("/me", auth, async (req, res) => {
+  try {
+    // req.user is populated by the authMiddleware with role, hospitalId, and id
+    const user = await User.findById(req.user.id).select("-password -refreshToken -resetPasswordToken");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({
+      id: user._id,
+      role: user.role,
+      hospitalId: user.hospitalId,
+      name: user.name,
+      email: user.email,
+      assignedDoctors: user.assignedDoctors || []
+    });
+  } catch (err) {
+    logger.error("Get Me Error", { error: err.message });
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -274,11 +324,11 @@ router.post("/logout", async (req, res) => {
       try {
         const decoded = require('jsonwebtoken').verify(token, process.env.JWT_SECRET);
         // Clear refresh token from database
-        await Doctor.findByIdAndUpdate(decoded.doctorId, {
+        await User.findByIdAndUpdate(decoded.userId, {
           refreshToken: null,
           refreshTokenExpiry: null
         });
-        logger.info("Doctor logged out successfully", { doctorId: decoded.doctorId });
+        logger.info("User logged out successfully", { userId: decoded.userId });
       } catch (err) {
         // Token might be expired, continue with logout
       }
@@ -354,32 +404,34 @@ router.post("/refresh", async (req, res) => {
       return res.status(401).json({ message: "Invalid or expired refresh token" });
     }
 
-    // Find doctor and verify refresh token matches
-    const doctor = await Doctor.findById(decoded.doctorId);
-    if (!doctor || doctor.refreshToken !== refreshToken) {
+    // Find user and verify refresh token matches
+    const user = await User.findById(decoded.userId);
+    if (!user || user.refreshToken !== refreshToken) {
       return res.status(401).json({ message: "Invalid refresh token" });
     }
 
     // Check if refresh token is expired
-    if (doctor.refreshTokenExpiry && new Date() > doctor.refreshTokenExpiry) {
+    if (user.refreshTokenExpiry && new Date() > user.refreshTokenExpiry) {
       return res.status(401).json({ message: "Refresh token expired" });
     }
 
     // Generate new access token and rotate refresh token
     const { accessToken, refreshToken: newRefreshToken, refreshTokenExpiry } = generateTokenPair({
-      doctorId: doctor._id
+      userId: user._id,
+      role: user.role,
+      hospitalId: user.hospitalId
     });
 
     // Update refresh token in database (token rotation)
-    doctor.refreshToken = newRefreshToken;
-    doctor.refreshTokenExpiry = refreshTokenExpiry;
-    await doctor.save();
+    user.refreshToken = newRefreshToken;
+    user.refreshTokenExpiry = refreshTokenExpiry;
+    await user.save();
 
     // Set new tokens in cookies
     res.cookie("token", accessToken, accessTokenCookieOptions);
     res.cookie("refreshToken", newRefreshToken, refreshTokenCookieOptions);
 
-    logger.info("Access token refreshed successfully", { doctorId: doctor._id });
+    logger.info("Access token refreshed successfully", { userId: user._id });
 
     res.json({
       message: "Token refreshed successfully"
@@ -436,12 +488,12 @@ router.post("/forgot-password", authLimiter, async (req, res) => {
       return res.status(400).json({ message: "Email is required" });
     }
 
-    // Find doctor by email
-    const doctor = await Doctor.findOne({ email });
+    // Find user by email
+    const user = await User.findOne({ email });
 
     // Always return success to prevent email enumeration
     // Don't reveal if email exists or not
-    if (!doctor) {
+    if (!user) {
       logger.info("Password reset requested for non-existent email", { email });
       return res.json({
         message: "If an account exists with this email, a password reset link has been sent"
@@ -453,19 +505,19 @@ router.post("/forgot-password", authLimiter, async (req, res) => {
     const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
 
     // Set reset token and expiry (1 hour)
-    doctor.resetPasswordToken = hashedToken;
-    doctor.resetPasswordExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-    await doctor.save();
+    user.resetPasswordToken = hashedToken;
+    user.resetPasswordExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await user.save();
 
     // Send reset email
-    const emailSent = await sendPasswordResetEmail(email, resetToken, doctor.name);
+    const emailSent = await sendPasswordResetEmail(email, resetToken, user.name);
 
     if (!emailSent) {
       logger.error("Failed to send password reset email", { email });
       // Still return success to user to prevent email enumeration
     }
 
-    logger.info("Password reset email sent", { doctorId: doctor._id, email });
+    logger.info("Password reset email sent", { userId: user._id, email });
 
     res.json({
       message: "If an account exists with this email, a password reset link has been sent"
@@ -537,13 +589,13 @@ router.post("/reset-password/:token", authLimiter, async (req, res) => {
     // Hash the token from URL to compare with stored hash
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
-    // Find doctor with valid reset token
-    const doctor = await Doctor.findOne({
+    // Find user with valid reset token
+    const user = await User.findOne({
       resetPasswordToken: hashedToken,
       resetPasswordExpiry: { $gt: Date.now() }
     });
 
-    if (!doctor) {
+    if (!user) {
       return res.status(400).json({
         message: "Invalid or expired reset token"
       });
@@ -551,18 +603,18 @@ router.post("/reset-password/:token", authLimiter, async (req, res) => {
 
     // Update password
     const hashedPassword = await bcrypt.hash(password, 10);
-    doctor.password = hashedPassword;
+    user.password = hashedPassword;
 
     // Clear reset token fields
-    doctor.resetPasswordToken = undefined;
-    doctor.resetPasswordExpiry = undefined;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpiry = undefined;
 
-    await doctor.save();
+    await user.save();
 
     // Send confirmation email
-    await sendPasswordChangeConfirmation(doctor.email, doctor.name);
+    await sendPasswordChangeConfirmation(user.email, user.name);
 
-    logger.info("Password reset successful", { doctorId: doctor._id });
+    logger.info("Password reset successful", { userId: user._id });
 
     res.json({ message: "Password has been reset successfully" });
   } catch (err) {

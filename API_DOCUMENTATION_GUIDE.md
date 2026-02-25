@@ -1,503 +1,105 @@
-# API Documentation with Swagger
+# SmartQueue QaaS Developer API Guide
 
-This document explains the API documentation setup for Smart Queue using Swagger/OpenAPI 3.0.
+Welcome to the SmartQueue B2B API documentation. This guide explains how external healthcare platforms, hospital booking aggregators, and custom frontends can integrate seamlessly with the SmartQueue infrastructure.
 
-## Overview
+---
 
-Smart Queue now includes interactive API documentation powered by Swagger UI. This provides:
+## 🔒 1. Authentication (API Keys)
 
-- **Interactive Testing**: Test API endpoints directly from the browser
-- **Auto-generated Documentation**: Documentation generated from code annotations
-- **Schema Validation**: Clear request/response schemas for all endpoints
-- **Authentication Support**: Built-in support for cookie-based authentication
+SmartQueue uses header-based API key authentication for all external B2B requests.
 
-## Accessing the Documentation
+### Acquiring a Key
+When your hospital account is provisioned, you will generate an API Key from the Developer Dashboard.
+Your keys will look like this: `sq_live_xxxxxxxxxxxxxxxxxxxx` or `sq_test_xxxxxxxxxxxxxxxxxxxx`.
 
-### Development
-```
-http://localhost:5000/api-docs
-```
-
-### Production
-```
-https://your-domain.com/api-docs
-```
-
-## Implementation Details
-
-### Packages Installed
+### Making Authenticated Requests
+Include your API key in the `x-api-key` HTTP header for every request.
 
 ```bash
-npm install swagger-jsdoc swagger-ui-express
+curl -X GET "https://api.smartqueue.com/api/v1/doctor/DOC_ID/queue" \
+  -H "x-api-key: sq_live_your_api_key_here"
 ```
 
-- **swagger-jsdoc**: Generates OpenAPI specification from JSDoc comments
-- **swagger-ui-express**: Serves interactive Swagger UI
+*Note: Do not share your live API keys in publicly accessible client-side code.*
 
-### Configuration (`backend/config/swagger.js`)
+---
 
-The Swagger configuration defines:
+## 🚦 2. Rate Limits & Quotas
 
-**API Information**:
-- Title: Smart Queue API
-- Version: 1.0.0
-- Description and contact information
+To ensure platform stability, all endpoints are strictly rate-limited based on your hospital's subscription tier:
+- **Basic:** 100 requests / 15 mins
+- **Pro:** 1,000 requests / 15 mins
+- **Enterprise:** 10,000 requests / 15 mins
 
-**Servers**:
-- Development: `http://localhost:5000/api`
-- Production: `https://api.smartqueue.com/api`
+If you exceed this quota, you will receive an ``HTTP 429 Too Many Requests`` response.
 
-**Security Schemes**:
-- cookieAuth: JWT token in httpOnly cookie
+---
 
-**Component Schemas**:
-- Doctor: Doctor account information
-- Patient: Patient/queue entry information
-- Error: Standard error response format
+## 🛡️ 3. Idempotency (Preventing Double Bookings)
 
-**Tags**:
-- Authentication: Doctor authentication endpoints
-- Queue Management: Patient queue operations
-- Doctors: Doctor profile management
+Network connections can drop. If you send a `POST /api/v1/queue` request to add a patient and don't receive a response, retrying the request could result in the patient being added to the queue *twice*.
 
-### Server Setup (`backend/server.js`)
+To prevent this, include an `Idempotency-Key` header with a unique UUID string for each distinct operation. If you retry a request with the exact same Idempotency-Key, SmartQueue will safely return the original successful response instead of processing it again.
 
-Swagger UI is mounted at `/api-docs`:
-
-```javascript
-const swaggerUi = require('swagger-ui-express');
-const swaggerSpec = require('./config/swagger');
-
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'Smart Queue API Documentation'
-}));
+```http
+POST /api/v1/queue
+x-api-key: <your_key>
+Idempotency-Key: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+Content-Type: application/json
 ```
 
-Configuration options:
-- **customCss**: Hides the default Swagger topbar
-- **customSiteTitle**: Sets page title
+---
 
-## Documented Endpoints
+## 🎣 4. Webhooks (Real-Time Events)
 
-### Authentication Endpoints
+Polling our API continuously is inefficient and will trigger rate limits. Instead, register a **Webhook Endpoint URL** to receive real-time push notifications.
 
-#### POST /api/auth/signup
-- **Summary**: Register a new doctor
-- **Security**: None (public endpoint)
-- **Request Body**: name, specialization, email, password
-- **Responses**: 200 (success), 400 (validation error), 429 (rate limit), 500 (server error)
+### Available Events
+- `queue.created`: Fired when a patient is added to a queue.
+- `queue.updated`: Fired when a queue is reordered or an ETA drastically shifts.
+- `queue.completed`: Fired when a doctor marks a consultation as finished.
+- `doctor.status_changed`: Fired when a doctor pauses/resumes their queue.
 
-#### POST /api/auth/login
-- **Summary**: Login as a doctor
-- **Security**: None (public endpoint)
-- **Request Body**: email, password
-- **Responses**: 200 (success with cookies), 401 (invalid credentials), 429 (rate limit)
-- **Sets Cookies**: token (15 min), refreshToken (7 days)
+### Handling Webhook Verification (HMAC SHA-256)
+All webhook payloads are cryptographically signed to prove they originated from SmartQueue. The signature is sent in the `SmartQueue-Signature` header.
 
-#### POST /api/auth/logout
-- **Summary**: Logout and clear tokens
-- **Security**: Requires cookie authentication
-- **Responses**: 200 (success), 500 (server error)
+You should compute the HMAC SHA-256 hash of the raw request payload using your specific **Webhook Secret** and compare it to the header to prevent spoofing.
 
-#### POST /api/auth/refresh
-- **Summary**: Refresh access token
-- **Security**: Requires refresh token in cookie
-- **Description**: Issues new access token and rotates refresh token
-- **Responses**: 200 (success with new cookies), 401 (invalid token)
+---
 
-#### POST /api/auth/forgot-password
-- **Summary**: Request password reset link
-- **Security**: None (public endpoint)
-- **Request Body**: email
-- **Responses**: 200 (always, prevents enumeration), 400 (missing email), 429 (rate limit)
-- **Security Note**: Returns same message for existing and non-existing emails
+## 📡 5. REST Endpoints Overview
 
-#### POST /api/auth/reset-password/{token}
-- **Summary**: Reset password using token
-- **Security**: None (token-based)
-- **Parameters**: token (path parameter)
-- **Request Body**: password (min 8 characters)
-- **Responses**: 200 (success), 400 (invalid token or weak password), 429 (rate limit)
+The base URL for all B2B requests is: `/api/v1`
 
-### Queue Management Endpoints
+### 🟣 Queue Management
 
-#### POST /api/queue/add
-- **Summary**: Add new patient to queue
-- **Security**: Requires cookie authentication
-- **Request Body**: name, age, phoneNumber, doctor ID
-- **Responses**: 201 (patient added), 400 (validation error), 401 (unauthorized)
-
-#### GET /api/queue/{doctorId}
-- **Summary**: Get waiting queue for a doctor
-- **Security**: Requires cookie authentication
-- **Parameters**: doctorId (path parameter)
-- **Returns**: Array of waiting patients with estimated wait times
-- **Responses**: 200 (queue data), 401 (unauthorized), 404 (doctor not found)
-
-#### GET /api/queue/status/{uniqueLinkId}
-- **Summary**: Get patient status by unique link
-- **Security**: None (public endpoint)
-- **Parameters**: uniqueLinkId (path parameter)
-- **Description**: Allows patients to check their queue status
-- **Responses**: 200 (patient status), 404 (invalid link)
-
-## Using the Swagger UI
-
-### Testing Endpoints
-
-**1. Open Swagger UI**
-Navigate to `http://localhost:5000/api-docs`
-
-**2. Authenticate (for protected endpoints)**
-- Click the "Authorize" button at the top
-- Note: Cookie authentication is automatic after login
-- The UI will show which endpoints require authentication
-
-**3. Test an Endpoint**
-- Click on an endpoint to expand it
-- Click "Try it out"
-- Fill in the required parameters
-- Click "Execute"
-- View the response below
-
-### Example: Testing Login Flow
-
-**Step 1: Register a Doctor**
-```
-POST /api/auth/signup
-Body:
+#### `POST /queue`
+Creates a new queue entry for a specified doctor.
+**Body:**
+```json
 {
-  "name": "Dr. Test",
-  "specialization": "General",
-  "email": "test@example.com",
-  "password": "testpass123"
+  "doctorId": "651a2b3c4d5e6f7g8h9i0j1k",
+  "externalPatientId": "usr_987654321", // Highly Recommended: Zero-PII strategy
+  "name": "John Doe",                   // Optional
+  "description": "Routine Checkup"      // Optional
 }
 ```
 
-**Step 2: Login**
-```
-POST /api/auth/login
-Body:
-{
-  "email": "test@example.com",
-  "password": "testpass123"
-}
-```
-Note: Cookies are automatically set by the browser
+#### `GET /queue/:uniqueLinkId`
+Retrieves the real-time status and ETA calculation for a specific patient link.
 
-**Step 3: Add a Patient**
-```
-POST /api/queue/add
-Body:
-{
-  "name": "John Patient",
-  "age": 30,
-  "phoneNumber": "1234567890",
-  "doctorId": "<doctor_id_from_login_response>"
-}
-```
+#### `DELETE /queue/:uniqueLinkId`
+Cancels an active queue entry.
 
-**Step 4: Get Queue**
-```
-GET /api/queue/{doctorId}
-```
+### ⚕️ Doctor Management
 
-## JSDoc Annotation Format
+#### `GET /doctor/:doctorId/status`
+Returns the doctor's current availability (`Available`, `Paused`, `Break`).
 
-Endpoints are documented using JSDoc comments with Swagger annotations:
+#### `GET /doctor/:doctorId/queue`
+Returns the current active live queue list (useful for rendering external reception dashboards).
 
-```javascript
-/**
- * @swagger
- * /api/endpoint:
- *   post:
- *     summary: Brief description
- *     description: Detailed description
- *     tags: [Tag Name]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: paramName
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               field:
- *                 type: string
- *     responses:
- *       200:
- *         description: Success
- *       400:
- *         description: Error
- */
-router.post("/endpoint", middleware, handler);
-```
+---
 
-## Schema Definitions
-
-### Doctor Schema
-```javascript
-{
-  id: string,
-  name: string,
-  specialization: string,
-  email: string,
-  status: enum['Available', 'Not Available', 'Break'],
-  avgConsultationTime: number
-}
-```
-
-### Patient Schema
-```javascript
-{
-  id: string,
-  name: string,
-  age: number,
-  phoneNumber: string,
-  tokenNumber: number,
-  status: enum['waiting', 'completed', 'cancelled'],
-  doctorId: string,
-  uniqueLinkId: string,
-  arrivalTime: datetime,
-  completionTime: datetime,
-  estimatedWaitTime: number,
-  waitingAhead: number
-}
-```
-
-### Error Schema
-```javascript
-{
-  message: string,
-  errors: [
-    {
-      field: string,
-      message: string
-    }
-  ]
-}
-```
-
-## Adding Documentation to New Endpoints
-
-When adding new endpoints, follow this process:
-
-**1. Add JSDoc Comment Above Route Handler**
-```javascript
-/**
- * @swagger
- * /api/your-endpoint:
- *   method:
- *     summary: Brief description
- *     tags: [Category]
- *     ...
- */
-router.method("/path", handler);
-```
-
-**2. Document Request Parameters**
-- Path parameters
-- Query parameters
-- Request body
-
-**3. Document Responses**
-- Success responses (200, 201, etc.)
-- Error responses (400, 401, 404, 500, etc.)
-- Include example responses
-
-**4. Test Documentation**
-- Start server: `npm run dev`
-- Open: `http://localhost:5000/api-docs`
-- Verify endpoint appears correctly
-- Test the endpoint using Swagger UI
-
-## Best Practices
-
-### Documentation Quality
-
-1. **Clear Summaries**: Write concise, descriptive summaries
-2. **Detailed Descriptions**: Add context and usage notes
-3. **Complete Schemas**: Document all fields with types and examples
-4. **Error Scenarios**: Document all possible error responses
-5. **Examples**: Provide realistic example values
-
-### Security Documentation
-
-1. **Mark Protected Endpoints**: Use `security: [{ cookieAuth: [] }]`
-2. **Document Auth Requirements**: Specify which role/permission needed
-3. **Explain Token Flow**: Document refresh token behavior
-
-### Schema Consistency
-
-1. **Reuse Schemas**: Use `$ref` to reference common schemas
-2. **Consistent Naming**: Use camelCase for fields
-3. **Validation Rules**: Document min/max, patterns, enums
-
-## Health Check Endpoint
-
-A health check endpoint is available for monitoring:
-
-```
-GET /health
-Response: { status: 'ok', timestamp: '2024-01-15T10:30:00.000Z' }
-```
-
-## Customization
-
-### Changing UI Theme
-
-Modify `server.js`:
-
-```javascript
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customCssUrl: 'https://your-custom-theme.css',
-  customSiteTitle: 'Your Custom Title'
-}));
-```
-
-### Adding More Servers
-
-Edit `config/swagger.js`:
-
-```javascript
-servers: [
-  {
-    url: 'http://localhost:5000/api',
-    description: 'Local development'
-  },
-  {
-    url: 'https://staging.smartqueue.com/api',
-    description: 'Staging environment'
-  },
-  {
-    url: 'https://api.smartqueue.com/api',
-    description: 'Production'
-  }
-]
-```
-
-### Adding Authentication Schemes
-
-For additional auth methods:
-
-```javascript
-securitySchemes: {
-  cookieAuth: {
-    type: 'apiKey',
-    in: 'cookie',
-    name: 'token'
-  },
-  bearerAuth: {
-    type: 'http',
-    scheme: 'bearer',
-    bearerFormat: 'JWT'
-  }
-}
-```
-
-## Troubleshooting
-
-### Documentation Not Appearing
-
-**Issue**: Endpoint doesn't show in Swagger UI
-
-**Solutions**:
-1. Check JSDoc comment format
-2. Verify file path in `swagger.js` apis array
-3. Restart server to reload documentation
-4. Check for syntax errors in JSDoc
-
-### Schema Not Rendering
-
-**Issue**: Schema shows as empty object
-
-**Solutions**:
-1. Verify schema definition in `config/swagger.js`
-2. Check `$ref` path is correct
-3. Ensure all required fields are defined
-
-### Authentication Not Working
-
-**Issue**: Can't test protected endpoints
-
-**Solutions**:
-1. Login using the login endpoint first
-2. Cookies should be set automatically
-3. Check browser developer tools > Application > Cookies
-4. Verify `withCredentials: true` in axios config
-
-### Swagger UI Not Loading
-
-**Issue**: `/api-docs` returns 404 or error
-
-**Solutions**:
-1. Check `swagger-ui-express` is installed
-2. Verify route is registered before other routes
-3. Check for middleware conflicts
-4. Look for errors in server console
-
-## Production Considerations
-
-### Security
-
-1. **Rate Limiting**: Already implemented on auth endpoints
-2. **HTTPS Only**: Use secure cookies in production
-3. **Access Control**: Consider restricting `/api-docs` in production
-4. **Sensitive Data**: Don't expose sensitive fields in examples
-
-### Performance
-
-1. **Caching**: Swagger spec is generated once at startup
-2. **CDN**: Consider using CDN for Swagger UI assets
-3. **Lazy Loading**: UI loads resources on demand
-
-### Monitoring
-
-Monitor API documentation access:
-```javascript
-app.use('/api-docs', (req, res, next) => {
-  logger.info('API docs accessed', { ip: req.ip });
-  next();
-}, swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-```
-
-## Future Enhancements
-
-Potential improvements:
-
-- [ ] Auto-generate Postman collection
-- [ ] Add request/response examples for all endpoints
-- [ ] Document WebSocket events
-- [ ] Add API versioning support
-- [ ] Generate client SDKs
-- [ ] Add more detailed error code documentation
-- [ ] Include rate limiting information
-- [ ] Add request/response size limits documentation
-
-## References
-
-- [Swagger Official Documentation](https://swagger.io/docs/)
-- [OpenAPI 3.0 Specification](https://swagger.io/specification/)
-- [swagger-jsdoc GitHub](https://github.com/Surnet/swagger-jsdoc)
-- [swagger-ui-express GitHub](https://github.com/scottie1984/swagger-ui-express)
-
-## Summary
-
-The API documentation system provides:
-- ✅ Interactive testing interface
-- ✅ Comprehensive endpoint documentation
-- ✅ Schema definitions and validation
-- ✅ Authentication support
-- ✅ Easy maintenance with JSDoc annotations
-- ✅ Professional presentation for API consumers
-
-Access the documentation at `http://localhost:5000/api-docs` and explore all available endpoints!
+## 💡 Zero-PII Recommendation
+To significantly reduce HIPAA/GDPR compliance liabilities, we strongly encourage integrators to pass opaque `externalPatientId` strings to SmartQueue rather than explicit personally identifiable names or phone numbers. SmartQueue will calculate the ETAs against this opaque token, and your frontend can map the token back to the real patient name locally.

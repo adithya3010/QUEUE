@@ -2,6 +2,7 @@ const { z } = require("zod");
 
 const doctorZodSchema = z.object({
   name: z.string().min(1, "Name is required"),
+  hospitalId: z.string().min(1, "Hospital ID is required"),
 
   specialization: z.string().min(1, "Specialization is required"),
 
@@ -30,6 +31,7 @@ const doctorZodSchema = z.object({
 // Schema for signup (requires all fields)
 const doctorSignupSchema = doctorZodSchema.pick({
   name: true,
+  hospitalId: true,
   specialization: true,
   email: true,
   password: true,

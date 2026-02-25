@@ -1,6 +1,6 @@
 const router = require("express").Router();
 const Doctor = require("../models/Doctor");
-const auth = require("../middleware/authMiddleware");
+const { auth } = require("../middleware/authMiddleware");
 router.get("/info", auth, async (req, res) => {
   const doctors = await Doctor.findById(req.doctorId);
   res.json(doctors);
@@ -10,7 +10,7 @@ router.get("/info", auth, async (req, res) => {
 router.put("/availability", auth, async (req, res) => {
   try {
     const doctor = await Doctor.findByIdAndUpdate(
-      req.doctorId, 
+      req.doctorId,
       { availability: req.body.availability },
       { new: true }
     );
@@ -23,7 +23,7 @@ router.put("/availability", auth, async (req, res) => {
     );
     global.io.to(req.doctorId.toString()).emit("queueUpdated");
 
-    res.json(doctor);  
+    res.json(doctor);
   } catch (err) {
     console.error("Availability Update Error", err);
     res.status(500).json({ message: "Server error" });

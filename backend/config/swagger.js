@@ -33,6 +33,12 @@ const swaggerOptions = {
           in: 'cookie',
           name: 'token',
           description: 'JWT token stored in httpOnly cookie'
+        },
+        ApiKeyAuth: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'x-api-key',
+          description: 'B2B API Key (sq_live_... or sq_test_...)'
         }
       },
       schemas: {
@@ -186,6 +192,10 @@ const swaggerOptions = {
       {
         name: 'Doctors',
         description: 'Doctor profile management'
+      },
+      {
+        name: 'B2B API',
+        description: 'External API integration endpoints'
       }
     ]
   },

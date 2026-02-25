@@ -1,0 +1,19 @@
+▲ Next.js 16.1.6 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 2.7s
+  Running TypeScript ...
+Failed to compile.
+
+./src/app/(dashboard)/history/page.tsx:123:41
+Type error: Type 'string' is not assignable to type 'number'.
+
+[0m [90m 121 |[39m                             {loading [33m?[39m (
+ [90m 122 |[39m                                 [33m<[39m[33mtr[39m[33m>[39m
+[31m[1m>[22m[39m[90m 123 |[39m                                     [33m<[39m[33mtd[39m colSpan[33m=[39m[32m"5"[39m className[33m=[39m[32m"px-6 py-20 text-center"[39m[33m>[39m
+ [90m     |[39m                                         [31m[1m^[22m[39m
+ [90m 124 |[39m                                         [33m<[39m[33mdiv[39m className[33m=[39m[32m"inline-flex flex-col items-center justify-center"[39m[33m>[39m
+ [90m 125 |[39m                                             [33m<[39m[33mdiv[39m className[33m=[39m[32m"w-10 h-10 border-4 border-purple-500 dark:border-purple-400 border-t-transparent rounded-full animate-spin"[39m[33m>[39m[33m<[39m[33m/[39m[33mdiv[39m[33m>[39m
+ [90m 126 |[39m                                             [33m<[39m[33mspan[39m className[33m=[39m[32m"mt-3 text-gray-500 dark:text-gray-400 font-medium tracking-widest text-sm"[39m[33m>[39m[33mLOADING[39m [33mRECORDS[39m[33m<[39m[33m/[39m[33mspan[39m[33m>[39m[0m
+Next.js build worker exited with code: 1 and signal: null

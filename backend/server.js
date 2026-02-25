@@ -13,6 +13,10 @@ const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const queueRoutes = require('./routes/queueRoutes');
 const doctorRoutes = require('./routes/doctorRoutes');
 const authRoutes = require('./routes/authRoutes');
+const apiV1Routes = require('./routes/apiV1Routes');
+const hospitalRoutes = require('./routes/hospitalRoutes');
+const adminRoutes = require('./routes/adminRoutes');
+const kioskRoutes = require('./routes/kioskRoutes');
 const sentry = require('./config/sentry');
 const swaggerSpec = require('./config/swagger');
 
@@ -33,20 +37,34 @@ app.use(sentry.tracingHandler());
 // CORS Configuration (must come before other middleware)
 const corsOrigin = process.env.NODE_ENV === 'production'
   ? process.env.FRONTEND_URL
-  : 'http://localhost:5173';
+  : 'http://localhost:3000';
 
 app.use(cors({
   origin: corsOrigin,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  // Explicitly allowing common headers to prevent Axios Network Errors on preflight
+  allowedHeaders: ["Content-Type", "Authorization", "x-api-key", "Idempotency-Key", "Accept", "X-Requested-With", "Cache-Control", "sentry-trace", "baggage", "origin"],
   credentials: true,
   preflightContinue: false,
   optionsSuccessStatus: 204
 }));
 
-// Security Middleware (after CORS)
+// API Documentation (before helmet to allow iframe embedding)
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Smart Queue API Documentation'
+}));
+
+// Security Middleware (after API Docs)
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      "frame-ancestors": ["'self'", "http://localhost:3000", process.env.FRONTEND_URL].filter(Boolean)
+    }
+  },
+  xFrameOptions: false
 }));
 app.use(mongoSanitize());
 app.use(cookieParser());
@@ -55,21 +73,21 @@ app.use(express.json());
 // Request logging middleware
 app.use(requestLogger);
 
-// API Documentation
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'Smart Queue API Documentation'
-}));
-
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Routes
+// Internal Legacy UI Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/admin/auth', adminRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/queue', queueRoutes);
+app.use('/api/hospitals', hospitalRoutes);
+app.use('/api/kiosk', kioskRoutes);
+
+// B2B QaaS External Headless Routes
+app.use('/api/v1', apiV1Routes);
 
 // Error handling middleware (must be after all routes)
 app.use(notFoundHandler);

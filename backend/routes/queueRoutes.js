@@ -1,9 +1,9 @@
 const router = require("express").Router();
 const Patient = require("../models/Patient");
-const auth = require("../middleware/authMiddleware");
+const { auth } = require("../middleware/authMiddleware");
 const { calculateWaitTimes } = require("../utils/waitTimeCalculator");
 const { v4: uuidv4 } = require("uuid");
-const Doctor = require("../models/Doctor");
+const User = require("../models/User");
 const { addPatientSchema } = require("../validators/pat_validator");
 const logger = require("../utils/logger");
 
@@ -81,11 +81,28 @@ const emitSocketEvent = (room, event, data) => {
  */
 router.post("/add", auth, async (req, res) => {
   try {
-    // Validate input with Zod
     const validatedData = addPatientSchema.parse(req.body);
     const { name, description, number } = validatedData;
 
-    const doctorId = req.doctorId;
+    // If a Receptionist is adding, they MUST pass doctorId in body.
+    // If a Doctor is adding, they use their own ID.
+    let doctorId = req.user?.id;
+
+    if (req.user?.role === "RECEPTIONIST") {
+      doctorId = req.body.doctorId;
+      if (!doctorId) return res.status(400).json({ message: "Doctor ID is required for receptionists" });
+
+      // Ensure they have permission
+      const userRec = await User.findById(req.user.id);
+      if (!userRec.assignedDoctors.includes(doctorId)) {
+        return res.status(403).json({ message: "Not authorized for this doctor's queue" });
+      }
+    } else if (req.user?.role !== "DOCTOR" && !req.doctorId) {
+      return res.status(403).json({ message: "Only Doctors or Receptionists can add patients" });
+    } else if (req.doctorId) {
+      // Fallback for legacy authMiddleware
+      doctorId = req.doctorId;
+    }
     const count = await Patient.countDocuments({
       doctorId,
       status: "waiting"
@@ -131,8 +148,14 @@ router.post("/add", auth, async (req, res) => {
 router.get("/history/", auth, async (req, res) => {
   try {
     const { date, status, search } = req.query;
+    let targetDoctorId = req.user?.role === "DOCTOR" ? (req.user?.id || req.doctorId) : req.query.doctorId;
+
+    if (!targetDoctorId) {
+      return res.status(400).json({ message: "Doctor ID required" });
+    }
+
     let filter = {
-      doctorId: req.doctorId,
+      doctorId: targetDoctorId,
       status: { $in: ["completed", "cancelled"] }
     };
     if (status) filter.status = status;
@@ -187,14 +210,14 @@ router.get("/history/", auth, async (req, res) => {
  */
 router.get("/:doctorId", auth, async (req, res) => {
   try {
-    const doctor = await Doctor.findById(req.params.doctorId);
+    const doctor = await User.findOne({ _id: req.params.doctorId, role: "DOCTOR" });
     if (!doctor) {
       return res.status(404).json({ message: "Doctor not found" });
     }
     const queue = await Patient.find({
       doctorId: req.params.doctorId,
-  status: { $in: ["waiting"] }
-}).sort({ tokenNumber: 1 });
+      status: { $in: ["waiting"] }
+    }).sort({ tokenNumber: 1 });
 
     const queueWithWaitTimes = calculateWaitTimes(queue, doctor);
 
@@ -270,13 +293,13 @@ router.get("/status/:uniqueLinkId", async (req, res) => {
     }));
 
     const myPosition = queueWithMarker.find(q => q.isMe)?.position || null;
-    const doctor = await Doctor.findById(patient.doctorId);
+    const doctor = await User.findById(patient.doctorId);
 
     res.json({
       doctorId: patient.doctorId,
       myStatus: patient.status,
       myTokenNumber: patient.tokenNumber,
-      avgTime: doctor.avgConsultationTime || 5, 
+      avgTime: doctor.avgConsultationTime || 5,
       myPosition,
       queue: queueWithMarker
     });

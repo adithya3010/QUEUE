@@ -9,11 +9,13 @@ const patientZodSchema = z.object({
     .min(1, "Doctor ID is required"),
 
   description: z.string()
-    .min(1, "Description is required")
-    .max(500, "Description is too long"),
+    .max(500, "Description is too long")
+    .optional()
+    .or(z.literal("")),
 
   number: z.string()
-    .regex(/^\d{10}$/, "Phone number must be 10 digits"),
+    .min(5, "Phone number requires at least 5 characters")
+    .max(20, "Phone number is too long"),
 
   tokenNumber: z
     .number()
