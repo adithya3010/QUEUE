@@ -82,19 +82,30 @@ const emitSocketEvent = (room, event, data) => {
 router.post("/add", auth, async (req, res) => {
   try {
     const validatedData = addPatientSchema.parse(req.body);
-    const { name, description, number } = validatedData;
+    const { name, description, number, doctorId: bodyDoctorId } = validatedData;
 
     // If a Receptionist is adding, they MUST pass doctorId in body.
     // If a Doctor is adding, they use their own ID.
     let doctorId = req.user?.id;
 
     if (req.user?.role === "RECEPTIONIST") {
-      doctorId = req.body.doctorId;
+      doctorId = bodyDoctorId;
       if (!doctorId) return res.status(400).json({ message: "Doctor ID is required for receptionists" });
 
       // Ensure they have permission
       const userRec = await User.findById(req.user.id);
-      if (!userRec.assignedDoctors.includes(doctorId)) {
+      if (!userRec) {
+        return res.status(404).json({ message: "Receptionist user not found" });
+      }
+      
+      // Check if assignedDoctors exists and has items
+      if (!userRec.assignedDoctors || userRec.assignedDoctors.length === 0) {
+        return res.status(403).json({ message: "No doctors assigned to this receptionist" });
+      }
+      
+      // Convert ObjectIds to strings for comparison
+      const assignedDoctorIds = userRec.assignedDoctors.map(id => id.toString());
+      if (!assignedDoctorIds.includes(doctorId.toString())) {
         return res.status(403).json({ message: "Not authorized for this doctor's queue" });
       }
     } else if (req.user?.role !== "DOCTOR" && !req.doctorId) {
@@ -103,12 +114,24 @@ router.post("/add", auth, async (req, res) => {
       // Fallback for legacy authMiddleware
       doctorId = req.doctorId;
     }
+    
+    // Verify the doctor exists and get their hospital
+    const doctor = await User.findOne({ _id: doctorId, role: "DOCTOR" });
+    if (!doctor) {
+      return res.status(404).json({ message: "Doctor not found" });
+    }
+    
+    if (!doctor.hospitalId) {
+      return res.status(500).json({ message: "Doctor is not associated with a hospital" });
+    }
+    
     const count = await Patient.countDocuments({
       doctorId,
       status: "waiting"
     });
 
     const patient = await Patient.create({
+      hospitalId: doctor.hospitalId,
       doctorId,
       name,
       description,
@@ -138,20 +161,101 @@ router.post("/add", auth, async (req, res) => {
     logger.error("Add Patient Error", {
       error: err?.message || String(err),
       stack: err?.stack,
-      name: err?.name
+      name: err?.name,
+      userRole: req.user?.role,
+      doctorId: doctorId,
+      requestBody: req.body
     });
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ 
+      message: "Server error",
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 });
 
 
 router.get("/history/", auth, async (req, res) => {
   try {
-    const { date, status, search } = req.query;
-    let targetDoctorId = req.user?.role === "DOCTOR" ? (req.user?.id || req.doctorId) : req.query.doctorId;
-
-    if (!targetDoctorId) {
-      return res.status(400).json({ message: "Doctor ID required" });
+    const { date, status, search, doctorId: queryDoctorId } = req.query;
+    let targetDoctorId;
+    
+    // Debug logging
+    logger.info("History request", { 
+      userId: req.user?.id, 
+      role: req.user?.role, 
+      hospitalId: req.user?.hospitalId,
+      queryDoctorId 
+    });
+    
+    if (!req.user || !req.user.role) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+    
+    // Determine doctor context based on role
+    if (req.user.role === "DOCTOR") {
+      // Doctors can only see their own history
+      targetDoctorId = req.user.id;
+    } else if (req.user?.role === "RECEPTIONIST") {
+      // Receptionists can see history for their assigned doctors
+      try {
+        const receptionist = await User.findById(req.user.id);
+        if (!receptionist) {
+          logger.error("Receptionist not found", { userId: req.user.id });
+          return res.status(404).json({ message: "Receptionist not found" });
+        }
+        
+        logger.info("Receptionist found", { 
+          userId: req.user.id, 
+          assignedDoctors: receptionist.assignedDoctors,
+          assignedDoctorsLength: receptionist.assignedDoctors?.length 
+        });
+        
+        if (!receptionist.assignedDoctors || receptionist.assignedDoctors.length === 0) {
+          logger.info("Receptionist has no assigned doctors, returning empty array");
+          return res.json([]);
+        }
+        
+        if (queryDoctorId) {
+          // Verify receptionist has access to this doctor
+          const assignedDoctorIds = receptionist.assignedDoctors.map(id => id.toString());
+          if (!assignedDoctorIds.includes(queryDoctorId.toString())) {
+            return res.status(403).json({ message: "Not authorized for this doctor's history" });
+          }
+          targetDoctorId = queryDoctorId;
+        } else {
+          // Return history for all assigned doctors
+          targetDoctorId = { $in: receptionist.assignedDoctors };
+        }
+      } catch (recepErr) {
+        logger.error("Error handling receptionist history", { 
+          error: recepErr.message, 
+          stack: recepErr.stack,
+          userId: req.user.id 
+        });
+        return res.status(500).json({ 
+          message: "Error processing receptionist request",
+          details: process.env.NODE_ENV === 'development' ? recepErr.message : undefined
+        });
+      }
+    } else if (req.user?.role === "HOSPITAL_ADMIN") {
+      // Admins can see history for any doctor in their hospital
+      if (queryDoctorId) {
+        // Verify doctor belongs to admin's hospital
+        const doctor = await User.findOne({ _id: queryDoctorId, hospitalId: req.user.hospitalId, role: "DOCTOR" });
+        if (!doctor) {
+          return res.status(403).json({ message: "Doctor not found in your hospital" });
+        }
+        targetDoctorId = queryDoctorId;
+      } else {
+        // Return history for all doctors in the hospital
+        const doctors = await User.find({ hospitalId: req.user.hospitalId, role: "DOCTOR" }).select('_id');
+        if (doctors.length === 0) {
+          return res.json([]);
+        }
+        targetDoctorId = { $in: doctors.map(d => d._id) };
+      }
+    } else {
+      return res.status(400).json({ message: "Invalid user role" });
     }
 
     let filter = {
@@ -167,11 +271,20 @@ router.get("/history/", auth, async (req, res) => {
       filter.completedAt = { $gte: start, $lte: end };
     }
 
-    const history = await Patient.find(filter).sort({ completedAt: -1 });
+    const history = await Patient.find(filter).sort({ completedAt: -1 }).populate('doctorId', 'name specialization');
     res.json(history);
   } catch (err) {
-    logger.error("History Fetch Error", { error: err.message, stack: err.stack });
-    res.status(500).json({ message: "Server Error" });
+    logger.error("History Fetch Error", { 
+      error: err.message, 
+      stack: err.stack,
+      userId: req.user?.id,
+      role: req.user?.role,
+      query: req.query
+    });
+    res.status(500).json({ 
+      message: "Server Error",
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 });
 

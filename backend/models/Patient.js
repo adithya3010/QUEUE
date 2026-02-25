@@ -5,7 +5,7 @@ const patientSchema = new mongoose.Schema({
   hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: "Hospital", required: true, index: true },
   externalPatientId: { type: String, index: true }, // Optional Zero-PII identifier used by external aggregators
   name: { type: String }, // Made optional for zero-PII
-  doctorId: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor", index: true },
+  doctorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
   description: { type: String }, // Made optional
   tokenNumber: { type: Number, required: true },
   status: {

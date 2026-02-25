@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 const rateLimit = require("express-rate-limit");
 const User = require("../models/User");
 const Hospital = require("../models/Hospital");
@@ -133,7 +134,13 @@ router.post("/login", adminLimiter, async (req, res) => {
 
 router.post("/logout", async (req, res) => {
     try {
+        // Clear both adminToken and token cookies for flexibility
         res.clearCookie("adminToken", {
+            httpOnly: true,
+            sameSite: isProduction ? "none" : "lax",
+            secure: isProduction
+        });
+        res.clearCookie("token", {
             httpOnly: true,
             sameSite: isProduction ? "none" : "lax",
             secure: isProduction
@@ -312,7 +319,7 @@ router.get("/reception/doctors", async (req, res) => {
             role: "DOCTOR"
         }).select('name specialization avgConsultationTime availability');
 
-        res.json({ success: true, data: doctors });
+        res.json(doctors);
     } catch (err) {
         logger.error("Reception doctors fetch err", err);
         res.status(500).json({ message: "Server error" });

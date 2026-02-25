@@ -3,7 +3,8 @@ const User = require("../models/User");
 
 const adminAuth = async (req, res, next) => {
     try {
-        const token = req.cookies.adminToken || req.header('Authorization')?.replace('Bearer ', '');
+        // Check for adminToken (from /api/admin/login) or token (from /api/auth/login)
+        const token = req.cookies.adminToken || req.cookies.token || req.header('Authorization')?.replace('Bearer ', '');
 
         if (!token) {
             return res.status(401).json({ message: "Authentication required" });

@@ -80,7 +80,7 @@ app.get('/health', (req, res) => {
 
 // Internal Legacy UI Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/admin/auth', adminRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/queue', queueRoutes);
 app.use('/api/hospitals', hospitalRoutes);
