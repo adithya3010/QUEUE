@@ -3,7 +3,7 @@ const router = express.Router();
 const { requireApiKey } = require('../middleware/apiAuth');
 const { apiLimiter } = require('../middleware/apiRateLimiter');
 const { checkIdempotency } = require('../middleware/idempotency');
-const { createQueueEntry, getDoctorStatus } = require('../controllers/apiV1Controller');
+const { createQueueEntry, getDoctorStatus, getQueueStatus, deleteQueueEntry, getDoctorQueue, bookApiAppointment } = require('../controllers/apiV1Controller');
 
 // All v1 B2B routes require an API Key and are rate-limited
 router.use(requireApiKey);
@@ -85,9 +85,7 @@ router.post('/queue', checkIdempotency, createQueueEntry);
  *         description: Queue entry not found
  */
 // Update/Cancel existing queue entry
-router.delete('/queue/:uniqueLinkId', async (req, res, next) => {
-    next();
-});
+router.delete('/queue/:uniqueLinkId', deleteQueueEntry);
 
 /**
  * @swagger
@@ -111,9 +109,7 @@ router.delete('/queue/:uniqueLinkId', async (req, res, next) => {
  *         description: Queue entry not found
  */
 // Get queue status
-router.get('/queue/:uniqueLinkId', async (req, res, next) => {
-    next();
-});
+router.get('/queue/:uniqueLinkId', getQueueStatus);
 
 // ----------------------------------------------------------------------
 // B2B Doctor Management Endpoints
@@ -141,9 +137,7 @@ router.get('/queue/:uniqueLinkId', async (req, res, next) => {
  *         description: Doctor not found
  */
 // Get Doctor live queue list
-router.get('/doctor/:doctorId/queue', async (req, res, next) => {
-    next();
-});
+router.get('/doctor/:doctorId/queue', getDoctorQueue);
 
 /**
  * @swagger
@@ -168,5 +162,42 @@ router.get('/doctor/:doctorId/queue', async (req, res, next) => {
  */
 // Get Doctor status (availability)
 router.get('/doctor/:doctorId/status', getDoctorStatus);
+
+// ----------------------------------------------------------------------
+// B2B Appointment Endpoints
+// ----------------------------------------------------------------------
+
+/**
+ * @swagger
+ * /v1/appointments/book:
+ *   post:
+ *     summary: Book an appointment for a patient
+ *     tags: [B2B API]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [doctorId, patientName, phone, scheduledAt]
+ *             properties:
+ *               doctorId:
+ *                 type: string
+ *               patientName:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               scheduledAt:
+ *                 type: string
+ *                 format: date-time
+ *               notes:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Appointment booked successfully
+ */
+router.post('/appointments/book', bookApiAppointment);
 
 module.exports = router;

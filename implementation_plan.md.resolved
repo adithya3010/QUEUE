@@ -1,0 +1,194 @@
+# SmartQueue — Production Feature Roadmap
+
+All features map to real files in the codebase. Ordered by impact and dependency.
+
+---
+
+## Phase 1 — Core Usability Fixes & Quick Wins (Week 1)
+
+### 🐛 Bug Fix — Reception [updateStatus](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/reception/page.tsx#128-137) calls wrong endpoints
+[reception/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/reception/page.tsx) calls `PUT /queue/update/:id` but backend only has `/complete/:id` and `/cancel/:id`.
+#### [MODIFY] [reception/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/reception/page.tsx)
+- `COMPLETED` → `api.put('/queue/complete/${id}')`
+- `CANCELLED` → `api.put('/queue/cancel/${id}')`
+
+---
+
+### Feature 1A — Patient Notes Field
+Receptionist adds a brief clinical note when registering ("chest pain", "follow-up BP"). Doctor sees it before calling.
+#### [MODIFY] [Patient.js](file:///c:/Smart-Queue/backend/models/Patient.js) — add `notes: { type: String, default: "" }`
+#### [MODIFY] [pat_validator.js](file:///c:/Smart-Queue/backend/validators/pat_validator.js) — add optional `notes` field
+#### [MODIFY] [queueRoutes.js](file:///c:/Smart-Queue/backend/routes/queueRoutes.js) — pass `notes` to `Patient.create()`
+#### [MODIFY] [reception/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/reception/page.tsx) — add `notes` textarea in Add Patient form
+
+---
+
+### Feature 1B — Pause with Message
+Doctor types a reason when pausing ("Emergency — back in 20 mins"). Patients see it on the live tracking page.
+#### [MODIFY] [User.js](file:///c:/Smart-Queue/backend/models/User.js) — add `pauseMessage: { type: String, default: "" }`
+#### [MODIFY] [doctorRoutes.js](file:///c:/Smart-Queue/backend/routes/doctorRoutes.js) — save `pauseMessage` in `PUT /availability`
+#### [MODIFY] [doctor/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/doctor/page.tsx) — show message input on "Paused" select
+#### [MODIFY] [queueRoutes.js](file:///c:/Smart-Queue/backend/routes/queueRoutes.js) — return `pauseMessage` in `GET /status/:id`
+#### [MODIFY] status tracking page — display message when doctor is paused
+
+---
+
+### Feature 1C — Multi-Doctor Simultaneous View (Receptionist)
+A single grid showing all assigned doctors' queues side-by-side instead of sequential iteration.
+#### [MODIFY] [reception/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/reception/page.tsx)
+- Replace flat queue array with a `Map<doctorId, patients[]>` structure
+- Render a column per doctor in a responsive grid layout
+- Each column has its own "Mark Complete" / "Cancel" buttons
+
+---
+
+## Phase 2 — Doctor Productivity (Week 2)
+
+### Feature 2A — Priority Flag from Doctor Side
+Doctor can pull any patient to position #1 with one tap (elderly, emergency walkup).
+#### [MODIFY] [queueRoutes.js](file:///c:/Smart-Queue/backend/routes/queueRoutes.js)
+- Add `PUT /queue/prioritise/:patientId` — sets `tokenNumber = 0` and shifts all others up
+#### [MODIFY] [doctor/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/doctor/page.tsx)
+- Add a live queue list view to the doctor dashboard
+- Each row has a "🔺 Prioritise" button
+
+---
+
+### Feature 2B — Doctor Daily Summary
+"Today at a Glance" card: patients seen, avg consultation time today, busiest hour, no-show count.
+#### [MODIFY] [queueRoutes.js](file:///c:/Smart-Queue/backend/routes/queueRoutes.js)
+- Add `GET /queue/summary/today` (DOCTOR auth)
+- Aggregate from [Patient](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/reception/page.tsx#107-127): count completed/cancelled today, time delta stats, peak hour bucket
+#### [MODIFY] [doctor/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/doctor/page.tsx)
+- Fetch on load, render 4-stat card row below settings area
+
+---
+
+### Feature 2C — Drag & Drop Queue Reorder (Receptionist)
+Drag tokens to reorder the queue visually. Backend already supports `PUT /queue/reorder/:doctorId`.
+#### [MODIFY] [reception/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/reception/page.tsx)
+- Install `@dnd-kit/core` and `@dnd-kit/sortable`
+- Replace the static table rows with sortable drag items
+- On drop, call `api.put('/queue/reorder/:doctorId', { newOrder })` which already exists
+
+---
+
+## Phase 3 — Patient Engagement & Notifications (Week 3)
+
+### Feature 3A — WhatsApp / SMS Notifications
+On registration: "You're #3 in Dr. Sharma's queue. Track live: [link]". At position #2: "You're almost up — please come in."
+
+> [!IMPORTANT]
+> Requires MSG91 (India, ~₹0.15/SMS or ₹1.20/WhatsApp) or Twilio. Free sandbox available for testing.
+
+#### [NEW] [utils/notificationService.js](file:///c:/Smart-Queue/backend/utils/notificationService.js)
+- `sendQueueConfirmation(phone, name, position, trackingUrl, doctorName)`
+- `sendNearlyUpAlert(phone, name, doctorName)`
+#### [MODIFY] [queueRoutes.js](file:///c:/Smart-Queue/backend/routes/queueRoutes.js)
+- Call `sendQueueConfirmation()` after `Patient.create()` in `POST /add`
+- After `PUT /complete/:id`, check if next patient is now at position 2 → call `sendNearlyUpAlert()`
+#### [MODIFY] [.env](file:///c:/Smart-Queue/backend/.env) — add `MSG91_AUTH_KEY`, `MSG91_TEMPLATE_ID`
+
+---
+
+### Feature 3B — Feedback Collection (1–5 stars)
+On visit completion, the patient's tracking page shows a 5-star rating. Collected passively.
+#### [MODIFY] [Patient.js](file:///c:/Smart-Queue/backend/models/Patient.js) — add `feedback: { rating: Number, comment: String }`
+#### [NEW] `PUT /queue/feedback/:uniqueLinkId` in queueRoutes.js — public, no auth, saves `{ rating, comment }`
+#### [MODIFY] status tracking page — show star rating UI when `status === "completed"`
+#### [MODIFY] [admin/dashboard/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/admin/dashboard/page.tsx) — show avg rating per doctor in stats
+
+---
+
+### Feature 3C — QR Code Self-Registration
+Patient scans QR at clinic → public page shows available doctors, queue sizes, ETAs → can self-register.
+#### [NEW] [kiosk/[hospitalId]/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/kiosk/%5BhospitalId%5D/page.tsx)
+- Public page (no auth required)
+- Fetches doctors via existing `GET /api/kiosk/:hospitalId/doctors`
+- Form: name, phone, select doctor → `POST /queue/add` (needs a public token path — add `hospitalPublicKey` auth option)
+#### [MODIFY] [admin/dashboard/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/admin/dashboard/page.tsx)
+- Add "Clinic QR Code" section using `qrcode.react` pointing to `/kiosk/${hospitalId}`
+- Include print/download button
+
+---
+
+## Phase 4 — Admin Power Features (Week 4)
+
+### Feature 4A — Analytics Dashboard
+Peak hours heatmap, wait time trend, completion rate, no-show rate per doctor.
+#### [NEW] [admin/analytics/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/admin/analytics/page.tsx)
+- Install `recharts`
+- Line chart: patients/day last 30 days
+- Bar chart: patients completed by doctor
+- Heatmap table: hour × day of week patient volume
+#### [MODIFY] [adminRoutes.js](file:///c:/Smart-Queue/backend/routes/adminRoutes.js)
+- Add `GET /admin/analytics?range=7d|30d` returning aggregated Patient data for the hospital
+
+---
+
+### Feature 4B — Staff Scheduling (Working Hours)
+Admin sets each doctor's working hours. System auto-marks unavailable outside schedule.
+#### [MODIFY] [User.js](file:///c:/Smart-Queue/backend/models/User.js)
+- Add `schedule: [{ day: String, startTime: String, endTime: String }]` to doctor fields
+#### [MODIFY] [adminRoutes.js](file:///c:/Smart-Queue/backend/routes/adminRoutes.js)
+- Add `PUT /admin/staff/:id/schedule` endpoint
+#### [NEW] Cron job (node-cron) — every 15 minutes, check all doctors' schedules and update `availability` automatically
+#### [MODIFY] [admin/dashboard/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/%28dashboard%29/admin/dashboard/page.tsx)
+- Add schedule editing UI per doctor (time range picker per day)
+
+---
+
+## Phase 5 — Infrastructure & Growth (Week 5+)
+
+### Feature 5A — Kiosk Display Mode
+Full-screen TV view showing current token + next 3 in queue. No interaction needed.
+#### [NEW] [kiosk/[hospitalId]/display/page.tsx](file:///c:/Smart-Queue/frontend-next/src/app/kiosk/%5BhospitalId%5D/display/page.tsx)
+- Existing `GET /api/kiosk/:hospitalId/display` backend route already exists
+- Build a clean, large-font display page with auto-refresh every 10 seconds
+- Show: "Now Serving: Token #7 — Dr. Sharma" and next 3 tokens
+
+---
+
+### Feature 5B — Multi-Branch Support
+Clinic chains with multiple locations under one admin account.
+#### [MODIFY] [Hospital.js](file:///c:/Smart-Queue/backend/models/Hospital.js) — add `branches: [{ name, address, branchId }]`
+#### [MODIFY] Auth JWT payload — include `branchId`
+#### [MODIFY] All queue queries — add `branchId` filter alongside `hospitalId`
+
+---
+
+### Feature 5C — Prescription / Return Visit Reminder
+Patient gets a WhatsApp reminder N days before their expected return, set by the doctor at end of visit.
+#### [MODIFY] [Patient.js](file:///c:/Smart-Queue/backend/models/Patient.js) — add `nextVisitDate: Date`
+#### [MODIFY] complete endpoint — accept `nextVisitDate` from doctor
+#### [NEW] Cron job — daily, find patients where `nextVisitDate = today + 1`, send WhatsApp via `notificationService`
+
+---
+
+### Feature 5D — Appointment Booking Layer
+Walk-in queue + booked appointments in one unified system.
+#### [NEW] `Appointment` model — `{ hospitalId, doctorId, patientName, phone, scheduledAt, tokenNumber, status }`
+#### [NEW] Appointment routes — `POST /appointments/book`, `GET /appointments/doctor/:id/today`
+#### [MODIFY] Queue system — merge walk-ins and appointments into a single ordered list per doctor session
+
+---
+
+### Feature 5E — HMS Integration API
+Let hospitals plug SmartQueue into their existing Hospital Management System.
+#### [MODIFY] [apiV1Routes.js](file:///c:/Smart-Queue/backend/routes/apiV1Routes.js) — expand existing B2B API with:
+- `POST /v1/queue/add` — add patient via API key (already partially built)
+- `GET /v1/queue/status/:token` — query by token number
+- `POST /v1/appointments/book`
+- Webhook support for queue events (already have [Webhook.js](file:///c:/Smart-Queue/backend/models/Webhook.js) model)
+
+---
+
+## Implementation Order Summary
+
+| Week | Focus | Features |
+|------|-------|---------|
+| 1 | Core fixes + quick wins | Bug fix, Patient Notes, Pause Message, Multi-doctor view |
+| 2 | Doctor productivity | Priority flag, Daily summary, Drag & drop reorder |
+| 3 | Patient engagement | SMS/WhatsApp, Feedback stars, QR self-registration |
+| 4 | Admin control | Analytics dashboard, Staff scheduling |
+| 5+ | Growth infrastructure | Kiosk display, Multi-branch, Reminders, Appointments, HMS API |

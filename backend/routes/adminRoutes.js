@@ -44,12 +44,14 @@ router.post("/signup", adminLimiter, async (req, res) => {
         // Provision Hospital
         const hospital = await Hospital.create({
             name: hospitalName,
-            email: email
+            email: email,
+            branches: [{ name: "Main Branch", address: "Local Branch" }]
         });
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const admin = await User.create({
             hospitalId: hospital._id,
+            branchId: hospital.branches[0]._id, // Assign admin to the default branch
             role: "HOSPITAL_ADMIN",
             name,
             email,
@@ -100,7 +102,8 @@ router.post("/login", adminLimiter, async (req, res) => {
             adminId: admin._id, // Backwards compatible for `adminAuth` middleware
             userId: admin._id,
             role: admin.role,
-            hospitalId: admin.hospitalId
+            hospitalId: admin.hospitalId,
+            branchId: admin.branchId
         });
 
         admin.refreshToken = refreshToken;
@@ -184,8 +187,13 @@ router.post("/staff/doctor", adminAuth, async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        // Get the default branch
+        const hospital = await Hospital.findById(admin.hospitalId);
+        const branchId = hospital.branches[0]._id;
+
         const newDoctor = await User.create({
             hospitalId: admin.hospitalId,
+            branchId: branchId,
             role: "DOCTOR",
             name,
             email,
@@ -246,8 +254,13 @@ router.post("/staff/receptionist", adminAuth, async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        // Get the default branch
+        const hospital = await Hospital.findById(admin.hospitalId);
+        const branchId = hospital.branches[0]._id;
+
         const newReceptionist = await User.create({
             hospitalId: admin.hospitalId,
+            branchId: branchId,
             role: "RECEPTIONIST",
             name,
             email,
@@ -279,6 +292,32 @@ router.post("/staff/receptionist", adminAuth, async (req, res) => {
     }
 });
 
+// Update a doctor's schedule
+router.put("/staff/:id/schedule", adminAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { schedule } = req.body;
+
+        const admin = await User.findById(req.adminId);
+        if (!admin || admin.role !== "HOSPITAL_ADMIN") {
+            return res.status(403).json({ message: "Forbidden. Not an admin." });
+        }
+
+        const doctor = await User.findOne({ _id: id, hospitalId: admin.hospitalId, role: "DOCTOR" });
+        if (!doctor) {
+            return res.status(404).json({ message: "Doctor not found or not in your hospital" });
+        }
+
+        doctor.schedule = schedule;
+        await doctor.save();
+
+        res.json({ message: "Schedule updated successfully", schedule: doctor.schedule });
+    } catch (err) {
+        logger.error("Update Schedule Error", { error: err.message });
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
 // Get all staff for the admin's hospital
 router.get("/staff", adminAuth, async (req, res) => {
     try {
@@ -290,7 +329,7 @@ router.get("/staff", adminAuth, async (req, res) => {
         const staff = await User.find({
             hospitalId: admin.hospitalId,
             role: { $in: ["DOCTOR", "RECEPTIONIST"] }
-        }).select("-password -refreshToken -resetPasswordToken");
+        }).populate("assignedDoctors", "name email specialization availability").select("-password -refreshToken -resetPasswordToken");
 
         res.json(staff);
     } catch (err) {
@@ -322,6 +361,124 @@ router.get("/reception/doctors", async (req, res) => {
         res.json(doctors);
     } catch (err) {
         logger.error("Reception doctors fetch err", err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// [NEW] Get hospital analytics dashboard data
+router.get("/analytics", adminAuth, async (req, res) => {
+    try {
+        const admin = await User.findById(req.adminId);
+        if (!admin || admin.role !== "HOSPITAL_ADMIN") {
+            return res.status(403).json({ message: "Forbidden" });
+        }
+
+        const hospitalId = admin.hospitalId;
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        thirtyDaysAgo.setHours(0, 0, 0, 0);
+
+        // 1. Daily patient volume (last 30 days)
+        const dailyVolume = await Patient.aggregate([
+            {
+                $match: {
+                    hospitalId: hospitalId,
+                    createdAt: { $gte: thirtyDaysAgo }
+                }
+            },
+            {
+                $group: {
+                    _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+                    count: { $sum: 1 }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]);
+
+        // 2. Doctor performance (all time or last 30 days)
+        const doctorPerformance = await Patient.aggregate([
+            {
+                $match: {
+                    hospitalId: hospitalId,
+                    createdAt: { $gte: thirtyDaysAgo }
+                }
+            },
+            {
+                $group: {
+                    _id: "$doctorId",
+                    completed: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+                    cancelled: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } },
+                    total: { $sum: 1 },
+                    // Calculate wait time: completedAt - createdAt in minutes
+                    avgWaitTime: {
+                        $avg: {
+                            $cond: [
+                                { $eq: ["$status", "completed"] },
+                                { $divide: [{ $subtract: ["$completedAt", "$createdAt"] }, 60000] },
+                                null
+                            ]
+                        }
+                    }
+                }
+            },
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "_id",
+                    foreignField: "_id",
+                    as: "doctor"
+                }
+            },
+            {
+                $unwind: "$doctor"
+            },
+            {
+                $project: {
+                    doctorName: "$doctor.name",
+                    completed: 1,
+                    cancelled: 1,
+                    total: 1,
+                    avgWaitTime: { $round: ["$avgWaitTime", 0] }
+                }
+            }
+        ]);
+
+        // 3. Heatmap Data (Day of week vs Hour of day)
+        const heatmapRaw = await Patient.aggregate([
+            {
+                $match: {
+                    hospitalId: hospitalId,
+                    createdAt: { $gte: thirtyDaysAgo }
+                }
+            },
+            {
+                $project: {
+                    dayOfWeek: { $dayOfWeek: "$createdAt" }, // 1 (Sunday) to 7 (Saturday)
+                    hourOfDay: { $hour: "$createdAt" }
+                }
+            },
+            {
+                $group: {
+                    _id: { dayOfWeek: "$dayOfWeek", hourOfDay: "$hourOfDay" },
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        const heatmap = heatmapRaw.map(item => ({
+            dayOfWeek: item._id.dayOfWeek - 1, // Convert to 0 (Sun) - 6 (Sat)
+            hourOfDay: item._id.hourOfDay,
+            count: item.count
+        }));
+
+        res.json({
+            dailyVolume: dailyVolume.map(v => ({ date: v._id, count: v.count })),
+            doctorPerformance,
+            heatmap
+        });
+
+    } catch (err) {
+        logger.error("Analytics fetch err", err);
         res.status(500).json({ message: "Server error" });
     }
 });

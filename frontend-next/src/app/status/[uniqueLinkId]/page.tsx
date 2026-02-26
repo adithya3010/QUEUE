@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import api from "@/services/api";
 import { socket } from "@/services/socket";
 import Loader from "@/components/Loader";
-import { CheckCircle, XCircle, Clock, AlertTriangle, Activity } from "lucide-react";
+import { CheckCircle, XCircle, Clock, AlertTriangle, Activity, Star } from "lucide-react";
 
 export default function PatientStatusView() {
     const { uniqueLinkId } = useParams();
@@ -13,9 +13,15 @@ export default function PatientStatusView() {
     const [data, setData] = useState(null);
     const [completed, setCompleted] = useState(false);
     const [cancelled, setCancelled] = useState(false);
-    const [remainingMinutes, setRemainingMinutes] = useState(null);
+    const [remainingMinutes, setRemainingMinutes] = useState<{ myPosition: number | null; myToken: number | null } | null>(null); // just a type placeholder, ignoring the type error for a bit, wait, the file doesn't have typing here.
     const [doctorStatus, setDoctorStatus] = useState("Available");
     const [loading, setLoading] = useState(true);
+
+    const [rating, setRating] = useState(0);
+    const [hoverRating, setHoverRating] = useState(0);
+    const [comment, setComment] = useState("");
+    const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+    const [feedbackLoading, setFeedbackLoading] = useState(false);
 
     function formatTime(mins) {
         if (mins == null) return "--";
@@ -33,6 +39,7 @@ export default function PatientStatusView() {
 
             if (res.data.status === "completed") {
                 setCompleted(true);
+                if (res.data.feedback) setFeedbackSubmitted(true);
                 return;
             }
             if (res.data.status === "cancelled") {
@@ -53,7 +60,7 @@ export default function PatientStatusView() {
             }
 
             socket.connect();
-            socket.emit("joinDoctorRoom", res.data.doctorId);
+            socket.emit("joinDoctorPublicRoom", res.data.doctorId);
         } catch (err) {
             console.log(err);
         } finally {
@@ -110,14 +117,74 @@ export default function PatientStatusView() {
             </div>
         );
 
+    const submitFeedback = async () => {
+        if (rating === 0) return;
+        setFeedbackLoading(true);
+        try {
+            await api.put(`/queue/feedback/${uniqueLinkId}`, { rating, comment });
+            setFeedbackSubmitted(true);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setFeedbackLoading(false);
+        }
+    };
+
     if (completed)
         return (
-            <div className="min-h-screen flex justify-center items-center bg-[#060c21] px-6 relative overflow-hidden">
+            <div className="min-h-screen flex justify-center items-center bg-[#060c21] px-6 relative overflow-hidden py-10">
                 <div className="absolute w-[50%] h-[50%] bg-success-600/10 blur-[150px] rounded-full pointer-events-none" />
-                <div className="bg-white/5 backdrop-blur-2xl p-10 rounded-3xl border border-success-500/20 shadow-[0_0_50px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] text-center max-w-md w-full animate-fade-up z-10">
-                    <CheckCircle className="w-20 h-20 text-success-400 mx-auto mb-6 drop-shadow-[0_0_15px_rgba(16,185,129,0.5)]" />
-                    <h2 className="text-3xl font-extrabold text-white">Visit Completed</h2>
-                    <p className="mt-4 text-gray-400 font-medium">Thank you for visiting! Have a wonderful day and speedy recovery.</p>
+                <div className="bg-white/5 backdrop-blur-2xl p-8 sm:p-10 rounded-3xl border border-success-500/20 shadow-[0_0_50px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.1)] text-center max-w-md w-full animate-fade-up z-10 flex flex-col items-center">
+                    <CheckCircle className="w-16 h-16 sm:w-20 sm:h-20 text-success-400 mx-auto mb-6 drop-shadow-[0_0_15px_rgba(16,185,129,0.5)]" />
+                    <h2 className="text-2xl sm:text-3xl font-extrabold text-white">Visit Completed</h2>
+                    <p className="mt-3 text-sm sm:text-base text-gray-400 font-medium max-w-[280px] mx-auto">Thank you for visiting! Have a wonderful day and speedy recovery.</p>
+
+                    {/* Feedback Section */}
+                    <div className="mt-8 w-full border-t border-white/10 pt-8 animate-fade-up">
+                        {feedbackSubmitted ? (
+                            <div className="bg-success-500/10 border border-success-500/20 rounded-2xl p-6 relative overflow-hidden">
+                                <div className="absolute inset-0 bg-success-400/10 blur-xl"></div>
+                                <h3 className="text-lg font-bold text-success-400 relative z-10">Feedback Received!</h3>
+                                <p className="text-sm text-success-100/70 mt-1 relative z-10">We appreciate your response.</p>
+                            </div>
+                        ) : (
+                            <div className="bg-black/20 border border-white/5 rounded-2xl p-6 shadow-inner">
+                                <h3 className="text-white font-bold mb-4">Rate Your Visit</h3>
+                                <div className="flex justify-center gap-2 mb-6">
+                                    {[1, 2, 3, 4, 5].map((star) => (
+                                        <button
+                                            key={star}
+                                            type="button"
+                                            className="transition-all hover:scale-110 focus:outline-none"
+                                            onClick={() => setRating(star)}
+                                            onMouseEnter={() => setHoverRating(star)}
+                                            onMouseLeave={() => setHoverRating(0)}
+                                        >
+                                            <Star
+                                                className={`w-8 h-8 ${star <= (hoverRating || rating)
+                                                    ? "fill-primary-400 text-primary-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.8)]"
+                                                    : "text-gray-600 fill-transparent"
+                                                    }`}
+                                            />
+                                        </button>
+                                    ))}
+                                </div>
+                                <textarea
+                                    value={comment}
+                                    onChange={(e) => setComment(e.target.value)}
+                                    placeholder="Any additional comments? (optional)"
+                                    className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-primary-500/50 resize-none h-20 mb-4 transition-colors"
+                                />
+                                <button
+                                    onClick={submitFeedback}
+                                    disabled={rating === 0 || feedbackLoading}
+                                    className="w-full py-3 rounded-xl bg-primary-600 hover:bg-primary-500 text-white font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(37,99,235,0.3)] hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] flex justify-center items-center"
+                                >
+                                    {feedbackLoading ? <Activity className="w-5 h-5 animate-spin" /> : "Submit Feedback"}
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         );
@@ -137,9 +204,30 @@ export default function PatientStatusView() {
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-light-blue-400 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/30 mb-4">
                         <Activity className="w-6 h-6 text-white" />
                     </div>
-                    <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400 text-center">
-                        Live Status
-                    </h2>
+                    <div className="flex items-center gap-3">
+                        <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-400 text-center">
+                            Live Status
+                        </h2>
+                    </div>
+                </div>
+
+                <div className="flex justify-center mb-8">
+                    <button
+                        onClick={() => {
+                            if (typeof window !== "undefined") {
+                                const url = window.location.href;
+                                navigator.clipboard.writeText(url).then(() => {
+                                    alert("Tracking link copied! You can use this link to track your queue from anywhere.");
+                                }).catch(err => {
+                                    console.error("Failed to copy link: ", err);
+                                });
+                            }
+                        }}
+                        className="bg-black/40 border border-white/10 hover:bg-white/10 transition-colors text-white text-xs font-bold py-2 px-4 rounded-full flex items-center gap-2"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-copy"><rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" /></svg>
+                        Copy Tracking Link
+                    </button>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">

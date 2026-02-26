@@ -80,6 +80,22 @@ module.exports = (io) => {
       });
     });
 
+    socket.on("joinDoctorPublicRoom", (doctorId) => {
+      socket.join(`doctor_public_${doctorId}`);
+      logger.info('Patient joined doctor public room', {
+        doctorId,
+        socketId: socket.id
+      });
+    });
+
+    socket.on("joinHospitalPublicRoom", (hospitalId) => {
+      socket.join(`hospital_public_${hospitalId}`);
+      logger.info('TV Display joined hospital public room', {
+        hospitalId,
+        socketId: socket.id
+      });
+    });
+
     socket.on("disconnect", () => {
       logger.info('Socket disconnected', {
         socketId: socket.id,

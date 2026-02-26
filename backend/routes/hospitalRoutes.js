@@ -198,8 +198,12 @@ router.post("/doctors", async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        const Hospital = require("../models/Hospital");
+        const hospital = await Hospital.findById(req.hospitalId);
+
         const doctor = new User({
             hospitalId: req.hospitalId,
+            branchId: hospital.branches[0]._id,
             role: "DOCTOR",
             name,
             email,

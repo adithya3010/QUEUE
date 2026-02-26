@@ -2,7 +2,10 @@ const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 const rateLimit = require("express-rate-limit");
+const passport = require("passport");
+const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const User = require("../models/User");
 const Hospital = require("../models/Hospital");
 const { adminSignupSchema, adminLoginSchema } = require("../validators/admin_validator");
@@ -10,6 +13,42 @@ const logger = require("../utils/logger");
 const { generateTokenPair, verifyRefreshToken } = require("../utils/tokenUtils");
 const { sendPasswordResetEmail, sendPasswordChangeConfirmation } = require("../utils/emailService");
 const { auth } = require("../middleware/authMiddleware");
+
+// ─── Google OAuth Strategy ───────────────────────────────────────────────────
+passport.use(new GoogleStrategy({
+  clientID: process.env.GOOGLE_CLIENT_ID,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+  callbackURL: process.env.GOOGLE_CALLBACK_URL,
+  scope: ["profile", "email"]
+}, async (accessToken, refreshToken, profile, done) => {
+  try {
+    const email = profile.emails?.[0]?.value;
+    if (!email) return done(null, false, { message: "No email from Google" });
+
+    // Try to find existing user by googleId or email
+    let user = await User.findOne({ $or: [{ googleId: profile.id }, { email }] });
+
+    if (user) {
+      // Link googleId if not already linked
+      if (!user.googleId) {
+        user.googleId = profile.id;
+        await user.save();
+      }
+      return done(null, user);
+    }
+
+    // New user — return profile info for signup flow
+    return done(null, false, { isNew: true, profile, email });
+  } catch (err) {
+    return done(err);
+  }
+}));
+
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((user, done) => done(null, user));
+
+router.use(passport.initialize());
+
 
 // Cookie settings based on environment
 const isProduction = process.env.NODE_ENV === 'production';
@@ -116,7 +155,8 @@ router.post("/signup", authLimiter, async (req, res) => {
 
     const hospital = await Hospital.create({
       name: hospitalName,
-      email: email
+      email: email,
+      branches: [{ name: "Main Branch", address: "Local Branch" }]
     });
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -126,7 +166,8 @@ router.post("/signup", authLimiter, async (req, res) => {
       name,
       email,
       password: hashedPassword,
-    });
+    }); // HOSPITAL_ADMIN doesn't require branchId
+
     res.json({
       message: "Signup successful",
       user: {
@@ -209,7 +250,7 @@ router.post("/login", authLimiter, async (req, res) => {
     const validatedData = adminLoginSchema.parse(req.body);
     const { email, password } = validatedData;
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).populate("assignedDoctors", "name email specialization availability");
     if (!user) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
@@ -222,8 +263,23 @@ router.post("/login", authLimiter, async (req, res) => {
     const { accessToken, refreshToken, refreshTokenExpiry } = generateTokenPair({
       userId: user._id,
       role: user.role,
-      hospitalId: user.hospitalId
+      hospitalId: user.hospitalId,
+      branchId: user.branchId
     });
+
+    // Fix legacy users missing a branchId
+    if (!user.branchId) {
+      const Hospital = require("../models/Hospital");
+      const hospital = await Hospital.findById(user.hospitalId);
+      if (hospital && hospital.branches && hospital.branches.length > 0) {
+        user.branchId = hospital.branches[0]._id;
+      } else if (hospital) {
+        // Create a default branch if none exist
+        hospital.branches = [{ name: "Main Branch", address: "Legacy Auto-Created" }];
+        await hospital.save();
+        user.branchId = hospital.branches[0]._id;
+      }
+    }
 
     // Store refresh token in database
     user.refreshToken = refreshToken;
@@ -241,6 +297,7 @@ router.post("/login", authLimiter, async (req, res) => {
       user: {
         id: user._id,
         hospitalId: user.hospitalId,
+        branchId: user.branchId,
         role: user.role,
         name: user.name,
         email: user.email,
@@ -280,7 +337,9 @@ router.post("/login", authLimiter, async (req, res) => {
 router.get("/me", auth, async (req, res) => {
   try {
     // req.user is populated by the authMiddleware with role, hospitalId, and id
-    const user = await User.findById(req.user.id).select("-password -refreshToken -resetPasswordToken");
+    const user = await User.findById(req.user.id)
+      .populate("assignedDoctors", "name email specialization availability")
+      .select("-password -refreshToken -resetPasswordToken");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -624,6 +683,156 @@ router.post("/reset-password/:token", authLimiter, async (req, res) => {
     res.json({ message: "Password has been reset successfully" });
   } catch (err) {
     logger.error("Reset Password Error", { error: err.message, stack: err.stack });
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ─── Google OAuth Routes ──────────────────────────────────────────────────────
+
+const GOOGLE_TEMP_TOKEN_SECRET = process.env.JWT_SECRET + "_google_temp";
+const FRONTEND = process.env.FRONTEND_URL || "http://localhost:3000";
+
+// Helper: set JWT cookies + redirect to correct dashboard
+async function loginAndRedirect(res, user) {
+  const hospital = await Hospital.findById(user.hospitalId);
+  if (!hospital) {
+    return res.redirect(`${FRONTEND}/login?error=hospital_not_found`);
+  }
+
+  // Fix missing branchId for legacy users
+  if (!user.branchId && hospital.branches?.length > 0) {
+    user.branchId = hospital.branches[0]._id;
+  }
+
+  const { accessToken, refreshToken, refreshTokenExpiry } = generateTokenPair({
+    userId: user._id,
+    role: user.role,
+    hospitalId: user.hospitalId,
+    branchId: user.branchId
+  });
+
+  user.refreshToken = refreshToken;
+  user.refreshTokenExpiry = refreshTokenExpiry;
+  await user.save();
+
+  const isProduction = process.env.NODE_ENV === "production";
+  const cookieOpts = { httpOnly: true, secure: isProduction, sameSite: isProduction ? "none" : "lax" };
+
+  res.cookie("token", accessToken, { ...cookieOpts, maxAge: 15 * 60 * 1000 });
+  res.cookie("refreshToken", refreshToken, { ...cookieOpts, maxAge: 7 * 24 * 60 * 60 * 1000, path: "/api/auth/refresh" });
+
+  const redirectMap = {
+    DOCTOR: "/doctor",
+    RECEPTIONIST: "/reception",
+    HOSPITAL_ADMIN: "/admin/dashboard"
+  };
+  res.redirect(`${FRONTEND}${redirectMap[user.role] || "/"}`);
+}
+
+// GET /auth/google — initiate
+router.get("/google", passport.authenticate("google", { scope: ["profile", "email"], session: false }));
+
+// GET /auth/google/callback
+router.get("/google/callback",
+  (req, res, next) => {
+    passport.authenticate("google", { session: false }, async (err, user, info) => {
+      if (err) {
+        logger.error("Google OAuth error", { error: err.message });
+        return res.redirect(`${FRONTEND}/login?error=oauth_error`);
+      }
+
+      // Existing user found → log in
+      if (user) {
+        return loginAndRedirect(res, user);
+      }
+
+      // New user — only allow new Hospital Admin registrations
+      if (info?.isNew) {
+        const tempPayload = {
+          googleId: info.profile.id,
+          email: info.email,
+          name: info.profile.displayName || "",
+        };
+        const tempToken = jwt.sign(tempPayload, GOOGLE_TEMP_TOKEN_SECRET, { expiresIn: "15m" });
+        return res.redirect(`${FRONTEND}/signup/google/complete?token=${tempToken}`);
+      }
+
+      return res.redirect(`${FRONTEND}/login?error=not_registered`);
+    })(req, res, next);
+  }
+);
+
+// POST /auth/google/complete — new Admin user provides hospitalName
+router.post("/google/complete", async (req, res) => {
+  try {
+    const { token, hospitalName } = req.body;
+    if (!token || !hospitalName?.trim()) {
+      return res.status(400).json({ message: "Token and hospital name are required" });
+    }
+
+    let payload;
+    try {
+      payload = jwt.verify(token, GOOGLE_TEMP_TOKEN_SECRET);
+    } catch {
+      return res.status(401).json({ message: "Invalid or expired signup session. Please try again." });
+    }
+
+    const { googleId, email, name } = payload;
+
+    // Check if full account (User) already exists
+    const existingUser = await User.findOne({ $or: [{ googleId }, { email }] });
+    if (existingUser) {
+      return res.status(400).json({ message: "Account already exists. Please log in." });
+    }
+
+    // Check for orphaned Hospital (created during a previously failed attempt)
+    // If no User exists but a Hospital does, clean it up and recreate
+    const existingHospital = await Hospital.findOne({ email });
+    if (existingHospital) {
+      logger.warn("Deleting orphaned hospital from a previous failed signup attempt", { email });
+      await Hospital.deleteOne({ _id: existingHospital._id });
+    }
+
+    const hospital = await Hospital.create({
+      name: hospitalName.trim(),
+      email,
+      branches: [{ name: "Main Branch", address: "Local Branch" }]
+    });
+
+    const newUser = await User.create({
+      hospitalId: hospital._id,
+      role: "HOSPITAL_ADMIN",
+      name: name || email.split("@")[0],
+      email,
+      googleId,
+      password: undefined // No password for Google users
+    });
+
+    // Assign branchId and issue JWT cookies
+    newUser.branchId = hospital.branches[0]._id;
+
+    const { accessToken, refreshToken, refreshTokenExpiry } = generateTokenPair({
+      userId: newUser._id,
+      role: newUser.role,
+      hospitalId: newUser.hospitalId,
+      branchId: newUser.branchId
+    });
+
+    newUser.refreshToken = refreshToken;
+    newUser.refreshTokenExpiry = refreshTokenExpiry;
+    await newUser.save();
+
+    const isProd = process.env.NODE_ENV === "production";
+    const cookieOpts = { httpOnly: true, secure: isProd, sameSite: isProd ? "none" : "lax" };
+    res.cookie("token", accessToken, { ...cookieOpts, maxAge: 15 * 60 * 1000 });
+    res.cookie("refreshToken", refreshToken, { ...cookieOpts, maxAge: 7 * 24 * 60 * 60 * 1000, path: "/api/auth/refresh" });
+
+    logger.info("New admin registered via Google", { userId: newUser._id, email });
+
+    // Return JSON — the frontend (Axios caller) will navigate
+    return res.json({ message: "Signup successful", redirectTo: "/admin/dashboard" });
+  } catch (err) {
+    logger.error("Google Complete Error", { error: err.message, stack: err.stack });
     res.status(500).json({ message: "Server error" });
   }
 });

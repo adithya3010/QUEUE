@@ -17,11 +17,21 @@ const apiV1Routes = require('./routes/apiV1Routes');
 const hospitalRoutes = require('./routes/hospitalRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const kioskRoutes = require('./routes/kioskRoutes');
+const appointmentRoutes = require('./routes/appointmentRoutes');
 const sentry = require('./config/sentry');
 const swaggerSpec = require('./config/swagger');
 
+const { initScheduleCron } = require('./cron/scheduleCron');
+const { initReminderCron } = require('./cron/reminderCron');
+
 dotenv.config();
 connectDB();
+
+// Initialize automated scheduled jobs
+if (process.env.NODE_ENV !== 'test') {
+  initScheduleCron();
+  initReminderCron();
+}
 
 const app = express();
 
@@ -83,6 +93,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/queue', queueRoutes);
+app.use('/api/appointments', appointmentRoutes);
 app.use('/api/hospitals', hospitalRoutes);
 app.use('/api/kiosk', kioskRoutes);
 

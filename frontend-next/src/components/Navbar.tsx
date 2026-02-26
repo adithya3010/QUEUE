@@ -4,15 +4,15 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import api from "@/services/api";
-import { 
-  LayoutDashboard, 
-  Users, 
-  UserCircle, 
-  History, 
-  Stethoscope, 
-  ClipboardList, 
-  LogOut, 
-  Menu, 
+import {
+  LayoutDashboard,
+  Users,
+  UserCircle,
+  History,
+  Stethoscope,
+  ClipboardList,
+  LogOut,
+  Menu,
   X,
   ChevronDown,
   Shield,
@@ -23,7 +23,7 @@ import {
 interface NavLink {
   name: string;
   path: string;
-  icon: React.ElementType;
+  icon: any;
   roles: string[];
 }
 
@@ -49,8 +49,8 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     try {
-      await api.post("/admin/logout").catch(() => {});
-      await api.post("/auth/logout").catch(() => {});
+      await api.post("/admin/logout").catch(() => { });
+      await api.post("/auth/logout").catch(() => { });
     } catch (err) {
       console.error("Logout error:", err);
     } finally {
@@ -62,13 +62,14 @@ export default function Navbar() {
   // Role-based navigation links
   const allNavLinks: NavLink[] = [
     { name: "Admin Dashboard", path: "/admin/dashboard", icon: LayoutDashboard, roles: ["HOSPITAL_ADMIN"] },
+    { name: "Analytics", path: "/admin/analytics", icon: Activity, roles: ["HOSPITAL_ADMIN"] },
     { name: "Reception Desk", path: "/reception", icon: ClipboardList, roles: ["RECEPTIONIST"] },
     { name: "Doctor Panel", path: "/doctor", icon: Stethoscope, roles: ["DOCTOR"] },
     { name: "History", path: "/history", icon: History, roles: ["HOSPITAL_ADMIN", "DOCTOR", "RECEPTIONIST"] },
   ];
 
   // Filter links based on user role
-  const navLinks = user?.role 
+  const navLinks: NavLink[] = user?.role
     ? allNavLinks.filter(link => link.roles.includes(user.role))
     : [];
 
@@ -115,7 +116,7 @@ export default function Navbar() {
     <nav className="fixed top-0 left-0 w-full z-50 bg-[#060c21]/90 backdrop-blur-xl border-b border-white/10 shadow-[0_10px_40px_rgba(0,0,0,0.6)]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          
+
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 group">
             <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-light-blue-400 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/30 group-hover:shadow-primary-500/50 transition-all">
@@ -229,8 +230,8 @@ export default function Navbar() {
                     onClick={() => setOpen(false)}
                     className={`
                       flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-all
-                      ${isActive 
-                        ? `bg-gradient-to-r ${roleStyle.gradient} text-white shadow-lg` 
+                      ${isActive
+                        ? `bg-gradient-to-r ${roleStyle.gradient} text-white shadow-lg`
                         : "text-gray-300 hover:bg-white/5"
                       }
                     `}

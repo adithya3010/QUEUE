@@ -7,6 +7,12 @@ const UserSchema = new mongoose.Schema({
         ref: "Hospital",
         required: true
     },
+    branchId: {
+        type: mongoose.Schema.Types.ObjectId,
+        required: function () {
+            return this.role === "DOCTOR" || this.role === "RECEPTIONIST";
+        }
+    },
     role: {
         type: String,
         enum: ["HOSPITAL_ADMIN", "DOCTOR", "RECEPTIONIST"],
@@ -23,7 +29,14 @@ const UserSchema = new mongoose.Schema({
     },
     password: {
         type: String,
-        required: true
+        required: function () {
+            return !this.googleId; // Password not required for Google OAuth users
+        }
+    },
+    googleId: {
+        type: String,
+        index: true,
+        sparse: true
     },
 
     // ----------------------------------------
@@ -44,6 +57,18 @@ const UserSchema = new mongoose.Schema({
         enum: ["Available", "Not Available"],
         default: "Available"
     },
+    pauseMessage: {
+        type: String,
+        default: ""
+    },
+    schedule: [{
+        day: {
+            type: String,
+            enum: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        },
+        startTime: String, // HH:MM in 24h format
+        endTime: String
+    }],
     metrics: {
         totalPatientsSeen: { type: Number, default: 0 },
         avgWaitTimeOverall: { type: Number, default: 0 }
@@ -75,6 +100,7 @@ const UserSchema = new mongoose.Schema({
 
 UserSchema.pre("save", async function () {
     if (!this.isModified("password")) return;
+    if (!this.password) return; // Google OAuth users have no password
 
     if (!this.password.startsWith("$2b$")) {
         this.password = await bcrypt.hash(this.password, 10);

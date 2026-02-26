@@ -48,7 +48,8 @@ const addPatientSchema = patientZodSchema.pick({
   description: true,
   number: true,
 }).extend({
-  doctorId: z.string().optional() // Optional: required for receptionists, not for doctors
+  doctorId: z.string().optional(), // Optional: required for receptionists, not for doctors
+  notes: z.string().max(300, "Note is too long").optional().or(z.literal("")) // Receptionist clinical note
 });
 
 module.exports = {

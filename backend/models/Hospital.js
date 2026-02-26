@@ -3,6 +3,11 @@ const mongoose = require("mongoose");
 const hospitalSchema = new mongoose.Schema({
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
+    branches: [{
+        name: { type: String, required: true },
+        address: { type: String },
+        isActive: { type: Boolean, default: true }
+    }],
     subscriptionPlan: {
         type: String,
         enum: ["Basic", "Pro", "Enterprise"],

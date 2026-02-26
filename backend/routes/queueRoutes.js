@@ -6,22 +6,41 @@ const { v4: uuidv4 } = require("uuid");
 const User = require("../models/User");
 const { addPatientSchema } = require("../validators/pat_validator");
 const logger = require("../utils/logger");
+const { sendQueueConfirmation, sendNearlyUpAlert } = require("../utils/notificationService");
 
 // Helper function to safely emit socket events
 // Handles cases where socket.io might not be initialized (e.g., in tests)
-const emitSocketEvent = (room, event, data) => {
+const emitSocketEvent = (room, event, data, hospitalId = null) => {
   if (!global.io || typeof global.io.to !== 'function') {
     return; // Socket.io not available, skip emission
   }
 
   const roomSocket = global.io.to(room);
-  if (roomSocket && typeof roomSocket.emit === 'function') {
-    if (data !== undefined) {
-      roomSocket.emit(event, data);
-    } else {
-      roomSocket.emit(event);
+
+  // Public room for patients to stream without auth
+  const publicDoctorRoom = `doctor_public_${room}`;
+  const publicDoctorSocket = global.io.to(publicDoctorRoom);
+
+  // Public room for Display Board to stream without auth
+  let publicHospitalSocket = null;
+  if (hospitalId) {
+    publicHospitalSocket = global.io.to(`hospital_public_${hospitalId}`);
+  }
+
+  // Helper inside helper
+  const tryEmit = (sock) => {
+    if (sock && typeof sock.emit === 'function') {
+      if (data !== undefined) {
+        sock.emit(event, data);
+      } else {
+        sock.emit(event);
+      }
     }
   }
+
+  tryEmit(roomSocket);
+  tryEmit(publicDoctorSocket);
+  if (publicHospitalSocket) tryEmit(publicHospitalSocket);
 };
 
 /**
@@ -82,7 +101,7 @@ const emitSocketEvent = (room, event, data) => {
 router.post("/add", auth, async (req, res) => {
   try {
     const validatedData = addPatientSchema.parse(req.body);
-    const { name, description, number, doctorId: bodyDoctorId } = validatedData;
+    const { name, description, number, notes, doctorId: bodyDoctorId } = validatedData;
 
     // If a Receptionist is adding, they MUST pass doctorId in body.
     // If a Doctor is adding, they use their own ID.
@@ -97,12 +116,12 @@ router.post("/add", auth, async (req, res) => {
       if (!userRec) {
         return res.status(404).json({ message: "Receptionist user not found" });
       }
-      
+
       // Check if assignedDoctors exists and has items
       if (!userRec.assignedDoctors || userRec.assignedDoctors.length === 0) {
         return res.status(403).json({ message: "No doctors assigned to this receptionist" });
       }
-      
+
       // Convert ObjectIds to strings for comparison
       const assignedDoctorIds = userRec.assignedDoctors.map(id => id.toString());
       if (!assignedDoctorIds.includes(doctorId.toString())) {
@@ -114,17 +133,17 @@ router.post("/add", auth, async (req, res) => {
       // Fallback for legacy authMiddleware
       doctorId = req.doctorId;
     }
-    
+
     // Verify the doctor exists and get their hospital
     const doctor = await User.findOne({ _id: doctorId, role: "DOCTOR" });
     if (!doctor) {
       return res.status(404).json({ message: "Doctor not found" });
     }
-    
+
     if (!doctor.hospitalId) {
       return res.status(500).json({ message: "Doctor is not associated with a hospital" });
     }
-    
+
     const count = await Patient.countDocuments({
       doctorId,
       status: "waiting"
@@ -132,15 +151,24 @@ router.post("/add", auth, async (req, res) => {
 
     const patient = await Patient.create({
       hospitalId: doctor.hospitalId,
+      branchId: req.user.branchId || doctor.branchId || doctor.hospitalId,
       doctorId,
       name,
       description,
+      notes: notes || "",
       number,
       tokenNumber: count + 1,
+      sortOrder: count + 1,
       uniqueLinkId: uuidv4()
     });
 
-    emitSocketEvent(doctorId.toString(), "queueUpdated");
+    emitSocketEvent(doctorId.toString(), "queueUpdated", undefined, doctor.hospitalId.toString());
+
+    // Send WhatsApp/SMS Confirmation
+    const trackingUrl = process.env.FRONTEND_URL
+      ? `${process.env.FRONTEND_URL}/status/${patient.uniqueLinkId}`
+      : `http://localhost:3000/status/${patient.uniqueLinkId}`;
+    sendQueueConfirmation(patient.number, patient.name, patient.tokenNumber, trackingUrl, doctor.name);
 
     res.json({
       message: "Patient added successfully",
@@ -166,7 +194,7 @@ router.post("/add", auth, async (req, res) => {
       doctorId: doctorId,
       requestBody: req.body
     });
-    res.status(500).json({ 
+    res.status(500).json({
       message: "Server error",
       details: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
@@ -178,19 +206,19 @@ router.get("/history/", auth, async (req, res) => {
   try {
     const { date, status, search, doctorId: queryDoctorId } = req.query;
     let targetDoctorId;
-    
+
     // Debug logging
-    logger.info("History request", { 
-      userId: req.user?.id, 
-      role: req.user?.role, 
+    logger.info("History request", {
+      userId: req.user?.id,
+      role: req.user?.role,
       hospitalId: req.user?.hospitalId,
-      queryDoctorId 
+      queryDoctorId
     });
-    
+
     if (!req.user || !req.user.role) {
       return res.status(401).json({ message: "Authentication required" });
     }
-    
+
     // Determine doctor context based on role
     if (req.user.role === "DOCTOR") {
       // Doctors can only see their own history
@@ -203,18 +231,18 @@ router.get("/history/", auth, async (req, res) => {
           logger.error("Receptionist not found", { userId: req.user.id });
           return res.status(404).json({ message: "Receptionist not found" });
         }
-        
-        logger.info("Receptionist found", { 
-          userId: req.user.id, 
+
+        logger.info("Receptionist found", {
+          userId: req.user.id,
           assignedDoctors: receptionist.assignedDoctors,
-          assignedDoctorsLength: receptionist.assignedDoctors?.length 
+          assignedDoctorsLength: receptionist.assignedDoctors?.length
         });
-        
+
         if (!receptionist.assignedDoctors || receptionist.assignedDoctors.length === 0) {
           logger.info("Receptionist has no assigned doctors, returning empty array");
           return res.json([]);
         }
-        
+
         if (queryDoctorId) {
           // Verify receptionist has access to this doctor
           const assignedDoctorIds = receptionist.assignedDoctors.map(id => id.toString());
@@ -227,12 +255,12 @@ router.get("/history/", auth, async (req, res) => {
           targetDoctorId = { $in: receptionist.assignedDoctors };
         }
       } catch (recepErr) {
-        logger.error("Error handling receptionist history", { 
-          error: recepErr.message, 
+        logger.error("Error handling receptionist history", {
+          error: recepErr.message,
           stack: recepErr.stack,
-          userId: req.user.id 
+          userId: req.user.id
         });
-        return res.status(500).json({ 
+        return res.status(500).json({
           message: "Error processing receptionist request",
           details: process.env.NODE_ENV === 'development' ? recepErr.message : undefined
         });
@@ -259,6 +287,7 @@ router.get("/history/", auth, async (req, res) => {
     }
 
     let filter = {
+      hospitalId: req.user.hospitalId,
       doctorId: targetDoctorId,
       status: { $in: ["completed", "cancelled"] }
     };
@@ -274,14 +303,14 @@ router.get("/history/", auth, async (req, res) => {
     const history = await Patient.find(filter).sort({ completedAt: -1 }).populate('doctorId', 'name specialization');
     res.json(history);
   } catch (err) {
-    logger.error("History Fetch Error", { 
-      error: err.message, 
+    logger.error("History Fetch Error", {
+      error: err.message,
       stack: err.stack,
       userId: req.user?.id,
       role: req.user?.role,
       query: req.query
     });
-    res.status(500).json({ 
+    res.status(500).json({
       message: "Server Error",
       details: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
@@ -328,9 +357,10 @@ router.get("/:doctorId", auth, async (req, res) => {
       return res.status(404).json({ message: "Doctor not found" });
     }
     const queue = await Patient.find({
+      hospitalId: doctor.hospitalId,
       doctorId: req.params.doctorId,
       status: { $in: ["waiting"] }
-    }).sort({ tokenNumber: 1 });
+    }).sort({ sortOrder: 1, tokenNumber: 1 });
 
     const queueWithWaitTimes = calculateWaitTimes(queue, doctor);
 
@@ -389,13 +419,14 @@ router.get("/status/:uniqueLinkId", async (req, res) => {
     if (patient.status === "completed") {
       return res.json({
         status: "completed",
-        message: "Thank you for visiting"
+        message: "Thank you for visiting",
+        feedback: patient.feedback
       });
     }
     const queue = await Patient.find({
       doctorId: patient.doctorId,
       status: { $in: ["waiting"] }
-    }).sort({ tokenNumber: 1 });
+    }).sort({ sortOrder: 1, tokenNumber: 1 });
     const queueWithMarker = queue.map((p, index) => ({
       id: p._id,
       name: p.name,
@@ -410,6 +441,9 @@ router.get("/status/:uniqueLinkId", async (req, res) => {
 
     res.json({
       doctorId: patient.doctorId,
+      doctorName: doctor.name,
+      doctorAvailability: doctor.availability,
+      doctorPauseMessage: doctor.pauseMessage || "",
       myStatus: patient.status,
       myTokenNumber: patient.tokenNumber,
       avgTime: doctor.avgConsultationTime || 5,
@@ -423,11 +457,73 @@ router.get("/status/:uniqueLinkId", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /queue/feedback/{uniqueLinkId}:
+ *   put:
+ *     summary: Submit feedback for a completed visit
+ *     tags: [Queue Management]
+ *     parameters:
+ *       - in: path
+ *         name: uniqueLinkId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - rating
+ *             properties:
+ *               rating:
+ *                 type: number
+ *                 minimum: 1
+ *                 maximum: 5
+ *               comment:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Feedback submitted successfully
+ *       400:
+ *         description: Invalid rating
+ *       404:
+ *         description: Invalid link or visit not completed
+ *       500:
+ *         description: Server error
+ */
+router.put("/feedback/:uniqueLinkId", async (req, res) => {
+  try {
+    const { rating, comment } = req.body;
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: "Rating must be between 1 and 5" });
+    }
+
+    const patient = await Patient.findOneAndUpdate(
+      { uniqueLinkId: req.params.uniqueLinkId, status: "completed" },
+      { feedback: { rating, comment } },
+      { new: true }
+    );
+
+    if (!patient) {
+      return res.status(404).json({ message: "Invalid link or visit not completed yet" });
+    }
+
+    res.json({ message: "Feedback submitted successfully", feedback: patient.feedback });
+  } catch (err) {
+    logger.error("Feedback Error", { error: err.message, stack: err.stack });
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 
 router.put("/complete/:id", auth, async (req, res) => {
   try {
-    const patient = await Patient.findByIdAndUpdate(
-      req.params.id,
+    const patient = await Patient.findOneAndUpdate(
+      { _id: req.params.id, hospitalId: req.user.hospitalId },
       { status: "completed", completedAt: new Date() },
       { new: true }
     );
@@ -435,8 +531,16 @@ router.put("/complete/:id", auth, async (req, res) => {
     if (!patient)
       return res.status(404).json({ message: "Patient not found" });
 
-    emitSocketEvent(patient.doctorId.toString(), "queueUpdated");
+    emitSocketEvent(patient.doctorId.toString(), "queueUpdated", undefined, req.user.hospitalId.toString());
     emitSocketEvent(patient.uniqueLinkId, "visitCompleted", { message: "Thank you for visiting" });
+
+    // Check if new position 2 exists and notify them
+    const nextWaiting = await Patient.find({ doctorId: patient.doctorId, status: "waiting" }).sort({ tokenNumber: 1 }).limit(2);
+    if (nextWaiting.length >= 2) {
+      const p2 = nextWaiting[1];
+      const doctor = await User.findById(patient.doctorId);
+      sendNearlyUpAlert(p2.number, p2.name, doctor.name);
+    }
 
     res.json(patient);
 
@@ -448,8 +552,8 @@ router.put("/complete/:id", auth, async (req, res) => {
 
 router.put("/cancel/:id", auth, async (req, res) => {
   try {
-    const patient = await Patient.findByIdAndUpdate(
-      req.params.id,
+    const patient = await Patient.findOneAndUpdate(
+      { _id: req.params.id, hospitalId: req.user.hospitalId },
       { status: "cancelled" },
       { new: true }
     );
@@ -457,8 +561,16 @@ router.put("/cancel/:id", auth, async (req, res) => {
     if (!patient)
       return res.status(404).json({ message: "Patient not found" });
 
-    emitSocketEvent(patient.doctorId.toString(), "queueUpdated");
+    emitSocketEvent(patient.doctorId.toString(), "queueUpdated", undefined, req.user.hospitalId.toString());
     emitSocketEvent(patient.uniqueLinkId, "visitCancelled", { message: "Your appointment has been cancelled." });
+
+    // Check if new position 2 exists and notify them
+    const nextWaiting = await Patient.find({ doctorId: patient.doctorId, status: "waiting" }).sort({ tokenNumber: 1 }).limit(2);
+    if (nextWaiting.length >= 2) {
+      const p2 = nextWaiting[1];
+      const doctor = await User.findById(patient.doctorId);
+      sendNearlyUpAlert(p2.number, p2.name, doctor.name);
+    }
 
     res.json(patient);
 
@@ -475,32 +587,34 @@ router.put("/reorder/:doctorId", auth, async (req, res) => {
     const { newOrder } = req.body;
 
     let queue = await Patient.find({
+      hospitalId: req.user.hospitalId,
       doctorId: req.params.doctorId,
       status: "waiting"
-    }).sort({ tokenNumber: 1 });
+    }).sort({ sortOrder: 1, tokenNumber: 1 });
 
     const topLimit = Math.min(3, queue.length);
-
-    const currentTop = queue.slice(0, topLimit);
 
     if (newOrder.length !== topLimit)
       return res.status(400).json({ message: "Invalid reorder request" });
 
+    // Only update sortOrder — tokenNumber stays unchanged (patient's assigned number)
     for (let i = 0; i < newOrder.length; i++) {
       await Patient.findByIdAndUpdate(newOrder[i], {
-        tokenNumber: i + 1
+        sortOrder: i + 1
       });
     }
 
-    let nextToken = newOrder.length + 1;
-
+    // Keep remaining patients' sortOrder after top 3
+    let nextSortOrder = newOrder.length + 1;
     for (let i = topLimit; i < queue.length; i++) {
-      await Patient.findByIdAndUpdate(queue[i]._id, {
-        tokenNumber: nextToken++
-      });
+      if (!newOrder.includes(queue[i]._id.toString())) {
+        await Patient.findByIdAndUpdate(queue[i]._id, {
+          sortOrder: nextSortOrder++
+        });
+      }
     }
 
-    emitSocketEvent(req.params.doctorId.toString(), "queueUpdated");
+    emitSocketEvent(req.params.doctorId.toString(), "queueUpdated", undefined, req.user.hospitalId.toString());
 
     res.json({ message: "Reordered successfully" });
 
@@ -511,7 +625,98 @@ router.put("/reorder/:doctorId", auth, async (req, res) => {
 });
 
 
+// PUT /queue/prioritise/:patientId — Doctor moves a patient to position #1
+router.put("/prioritise/:patientId", auth, async (req, res) => {
+  try {
+    const patient = await Patient.findById(req.params.patientId);
+    if (!patient) return res.status(404).json({ message: "Patient not found" });
 
+    // Verify the doctor owns this queue
+    const doctorId = patient.doctorId.toString();
+    if (req.user.role === "DOCTOR" && req.user.id !== doctorId) {
+      return res.status(403).json({ message: "Not authorized for this queue" });
+    }
 
+    // Get all waiting patients for this doctor, sorted by sortOrder
+    const waitingQueue = await Patient.find({ doctorId, status: "waiting" }).sort({ sortOrder: 1, tokenNumber: 1 });
+
+    // Re-order via sortOrder only: prioritised patient gets sortOrder 1, others shift up
+    // tokenNumber (patient's assigned number) remains untouched
+    let newSortOrder = 2;
+    for (const p of waitingQueue) {
+      if (p._id.toString() === req.params.patientId) {
+        await Patient.findByIdAndUpdate(p._id, { sortOrder: 1 });
+      } else {
+        await Patient.findByIdAndUpdate(p._id, { sortOrder: newSortOrder++ });
+      }
+    }
+
+    emitSocketEvent(doctorId, "queueUpdated", undefined, patient.hospitalId.toString());
+    res.json({ message: "Patient prioritised successfully" });
+  } catch (err) {
+    logger.error("Prioritise Error", { error: err.message, stack: err.stack });
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// GET /queue/summary/today — Doctor daily summary card
+router.get("/summary/today", auth, async (req, res) => {
+  try {
+    if (req.user.role !== "DOCTOR") {
+      return res.status(403).json({ message: "Doctors only" });
+    }
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const todaysPatients = await Patient.find({
+      doctorId: req.user.id,
+      createdAt: { $gte: startOfDay, $lte: endOfDay }
+    });
+
+    const completed = todaysPatients.filter(p => p.status === "completed");
+    const cancelled = todaysPatients.filter(p => p.status === "cancelled");
+    const waiting = todaysPatients.filter(p => p.status === "waiting");
+
+    // Average consultation time: delta between consecutive completedAt timestamps
+    let avgConsultTime = 0;
+    if (completed.length >= 2) {
+      const sorted = completed.sort((a, b) => new Date(a.completedAt) - new Date(b.completedAt));
+      let totalDelta = 0;
+      for (let i = 1; i < sorted.length; i++) {
+        totalDelta += (new Date(sorted[i].completedAt) - new Date(sorted[i - 1].completedAt));
+      }
+      avgConsultTime = Math.round(totalDelta / (sorted.length - 1) / 60000); // in minutes
+    }
+
+    // Busiest hour: which hour had the most patient arrivals
+    const hourBuckets = {};
+    for (const p of todaysPatients) {
+      const hour = new Date(p.createdAt).getHours();
+      hourBuckets[hour] = (hourBuckets[hour] || 0) + 1;
+    }
+    let busiestHour = null;
+    let maxCount = 0;
+    for (const [hour, count] of Object.entries(hourBuckets)) {
+      if (count > maxCount) { maxCount = count; busiestHour = parseInt(hour); }
+    }
+    const formatHour = (h) => h === null ? "–" : `${h % 12 || 12}${h < 12 ? "am" : "pm"}`;
+
+    res.json({
+      totalToday: todaysPatients.length,
+      completed: completed.length,
+      cancelled: cancelled.length,
+      waiting: waiting.length,
+      avgConsultTime,
+      busiestHour: formatHour(busiestHour),
+      noShows: cancelled.length
+    });
+  } catch (err) {
+    logger.error("Summary Today Error", { error: err.message, stack: err.stack });
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 module.exports = router;

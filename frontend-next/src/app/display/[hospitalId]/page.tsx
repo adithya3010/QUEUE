@@ -33,11 +33,21 @@ export default function DisplayBoard() {
         // WebSocket Integration for real-time TV re-rendering
         const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000', {
             transports: ['websocket'],
-            // In a real prod app, the display board would authenticate with a read-only Display Token.
-            // For now, we connect without auth and rely on the frontend fetching.
-            // Wait, our backend socket requires auth. If the display board isn't authenticated, 
-            // it won't connect. For the sake of this demo, we'll poll every 10 seconds 
-            // as a fallback if the socket doesn't connect.
+        });
+
+        socket.on('connect', () => {
+            console.log("Connected to display socket");
+            socket.emit('joinHospitalPublicRoom', hospitalId);
+        });
+
+        socket.on('queueUpdated', () => {
+            console.log("Queue Update Received via Socket, Reloading Display Data...");
+            loadDisplayData();
+        });
+
+        socket.on('doctorAvailabilityChanged', () => {
+            console.log("Doctor Availability Changed via Socket, Reloading Display Data...");
+            loadDisplayData();
         });
 
         // Polling fallback (typical for digital signage to ensure it never gets stuck)
@@ -46,6 +56,8 @@ export default function DisplayBoard() {
         }, 10000);
 
         return () => {
+            socket.off('queueUpdated');
+            socket.off('doctorAvailabilityChanged');
             socket.disconnect();
             clearInterval(interval);
         };
