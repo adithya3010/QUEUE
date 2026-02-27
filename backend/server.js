@@ -43,25 +43,9 @@ app.use(sentry.requestHandler());
 app.use(sentry.tracingHandler());
 
 // CORS Configuration (must come before other middleware)
-const isProd = process.env.NODE_ENV === "production";
-const corsOrigin = (origin, callback) => {
-  // Allow non-browser clients (curl/postman) with no Origin header
-  if (!origin) return callback(null, true);
-
-  if (isProd) {
-    const allowed = process.env.FRONTEND_URL;
-    return callback(null, !allowed || origin === allowed);
-  }
-
-  // Dev: allow any localhost port (Next dev may switch ports)
-  const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-  if (isLocalhost) return callback(null, true);
-
-  // Also allow explicit FRONTEND_URL if set
-  if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) return callback(null, true);
-
-  return callback(new Error(`CORS blocked origin: ${origin}`));
-};
+const corsOrigin = process.env.NODE_ENV === 'production'
+  ? process.env.FRONTEND_URL
+  : 'http://localhost:3000';
 
 app.use(cors({
   origin: corsOrigin,
