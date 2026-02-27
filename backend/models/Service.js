@@ -30,6 +30,16 @@ const serviceSchema = new mongoose.Schema({
         default: null   // null = unlimited queue
     },
     isActive: { type: Boolean, default: true },
+
+    // Optional: per-service check-in/intake fields (supports any industry)
+    // Examples: "Account Number", "Reason for visit", "Vehicle Plate", "Order ID"
+    intakeFields: [{
+        key:      { type: String, trim: true },
+        label:    { type: String, trim: true },
+        type:     { type: String, enum: ["text", "number", "boolean", "select", "date"], default: "text" },
+        required: { type: Boolean, default: false },
+        options:  [{ type: String }],
+    }],
     schedule: [{
         day: {
             type: String,

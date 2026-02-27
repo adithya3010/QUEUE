@@ -29,6 +29,28 @@ const queueEntrySchema = new mongoose.Schema({
     clientName:       { type: String },                // optional for zero-PII flows
     clientPhone:      { type: String },                // for SMS/WhatsApp notifications
 
+    // Where the entry came from (useful across industries)
+    source: {
+        type: String,
+        enum: ["kiosk", "web", "operator", "api"],
+        default: "web",
+        index: true
+    },
+
+    // Arbitrary per-service intake answers (keys defined by Service.intakeFields)
+    intake: {
+        type: Map,
+        of: mongoose.Schema.Types.Mixed,
+        default: undefined
+    },
+
+    // Extra non-indexed metadata for integrations
+    metadata: {
+        type: Map,
+        of: mongoose.Schema.Types.Mixed,
+        default: undefined
+    },
+
     // ── Queue data ──────────────────────────────────────────────────────────
     notes:       { type: String, default: "" },        // service/clinical note
     tokenNumber: { type: Number, required: true },

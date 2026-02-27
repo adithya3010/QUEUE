@@ -10,7 +10,8 @@ export default function Signup() {
     const router = useRouter();
     const [form, setForm] = useState({
         name: "",
-        hospitalName: "",
+        orgName: "",
+        industry: "healthcare",
         email: "",
         password: ""
     });
@@ -111,7 +112,7 @@ export default function Signup() {
                             Create Account
                         </h2>
                         <p className="text-neutral-500 dark:text-neutral-400 text-sm font-medium">
-                            Register your hospital or clinic.
+                            Register your organization.
                         </p>
                     </div>
 
@@ -135,11 +136,11 @@ export default function Signup() {
                         </div>
 
                         <div className="space-y-1 text-left">
-                            <label className="text-xs font-bold text-neutral-600 dark:text-neutral-400 ml-1">Clinic / Hospital Name</label>
+                            <label className="text-xs font-bold text-neutral-600 dark:text-neutral-400 ml-1">Organization Name</label>
                             <input
-                                name="hospitalName"
+                                name="orgName"
                                 placeholder="e.g. City General Hospital"
-                                value={form.hospitalName}
+                                value={form.orgName}
                                 onChange={handleChange}
                                 className="w-full p-3.5 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 outline-none transition-all shadow-sm"
                                 required
@@ -147,11 +148,28 @@ export default function Signup() {
                         </div>
 
                         <div className="space-y-1 text-left">
+                            <label className="text-xs font-bold text-neutral-600 dark:text-neutral-400 ml-1">Industry</label>
+                            <select
+                                name="industry"
+                                value={form.industry}
+                                onChange={handleChange}
+                                className="w-full p-3.5 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 outline-none transition-all shadow-sm"
+                                required
+                            >
+                                <option value="healthcare">Healthcare</option>
+                                <option value="salon">Salon / Spa</option>
+                                <option value="banking">Banking</option>
+                                <option value="government">Govt / Public Services</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+
+                        <div className="space-y-1 text-left">
                             <label className="text-xs font-bold text-neutral-600 dark:text-neutral-400 ml-1">Email Address</label>
                             <input
                                 name="email"
                                 type="email"
-                                placeholder="you@hospital.com"
+                                placeholder="you@company.com"
                                 value={form.email}
                                 onChange={handleChange}
                                 className="w-full p-3.5 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 outline-none transition-all shadow-sm"

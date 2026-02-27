@@ -102,7 +102,7 @@ function generateSlug(name) {
 router.post("/signup", orgLimiter, async (req, res) => {
     try {
         const validatedData = orgSignupSchema.parse(req.body);
-        const { name, email, password, orgName, industry } = validatedData;
+        const { name, email, password, orgName, industry, primaryLocation, services } = validatedData;
 
         const existingUser = await User.findOne({ email });
         if (existingUser) return res.status(400).json({ message: "Email already exists" });
@@ -123,8 +123,29 @@ router.post("/signup", orgLimiter, async (req, res) => {
             email,
             industry: industry || "other",
             slug,
-            locations: [{ name: "Main Location", address: "Default Location" }]
+            locations: [{
+                name:     primaryLocation?.name || "Main Location",
+                address:  primaryLocation?.address || "Default Location",
+                timezone: primaryLocation?.timezone || "Asia/Kolkata"
+            }]
         });
+
+        // Provision initial services (optional); if not provided, create a generic default
+        const seedServices = Array.isArray(services) && services.length
+            ? services
+            : [{ name: "Default Service", category: "General" }];
+
+        const defaultDuration = org.settings?.defaultSessionDuration ?? 5;
+        await Service.insertMany(seedServices.map(s => ({
+            organizationId: org._id,
+            locationId:     org.locations?.[0]?._id,
+            name:           s.name,
+            description:    s.description,
+            category:       s.category,
+            avgSessionDuration: s.avgSessionDuration ?? defaultDuration,
+            maxCapacity:        s.maxCapacity ?? null,
+            isActive: true,
+        })));
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const admin = await User.create({

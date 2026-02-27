@@ -13,7 +13,7 @@ export default function PatientStatusView() {
     const [data, setData] = useState(null);
     const [completed, setCompleted] = useState(false);
     const [cancelled, setCancelled] = useState(false);
-    const [remainingMinutes, setRemainingMinutes] = useState<{ myPosition: number | null; myToken: number | null } | null>(null); // just a type placeholder, ignoring the type error for a bit, wait, the file doesn't have typing here.
+    const [remainingMinutes, setRemainingMinutes] = useState<number | null>(null);
     const [doctorStatus, setDoctorStatus] = useState("Available");
     const [loading, setLoading] = useState(true);
 
@@ -23,7 +23,7 @@ export default function PatientStatusView() {
     const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
     const [feedbackLoading, setFeedbackLoading] = useState(false);
 
-    function formatTime(mins) {
+    function formatTime(mins: number | null) {
         if (mins == null) return "--";
         if (mins >= 60) {
             const h = Math.floor(mins / 60);
@@ -113,7 +113,10 @@ export default function PatientStatusView() {
         if (doctorStatus !== "Available") return;
 
         const interval = setInterval(() => {
-            setRemainingMinutes(prev => (prev > 0 ? prev - 1 : 0));
+            setRemainingMinutes(prev => {
+                if (prev == null) return prev;
+                return prev > 0 ? prev - 1 : 0;
+            });
         }, 60000);
 
         return () => clearInterval(interval);

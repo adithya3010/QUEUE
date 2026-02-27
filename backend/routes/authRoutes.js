@@ -9,6 +9,7 @@ const GoogleStrategy = require("passport-google-oauth20").Strategy;
 
 const User         = require("../models/User");
 const Organization = require("../models/Organization");
+const Service      = require("../models/Service");
 const { orgSignupSchema, orgLoginSchema } = require("../validators/org_validator");
 const logger       = require("../utils/logger");
 const { generateTokenPair, verifyRefreshToken } = require("../utils/tokenUtils");
@@ -114,7 +115,7 @@ router.post("/signup", authLimiter, async (req, res) => {
         // Accept both orgName (new) and hospitalName (legacy)
         const body = { ...req.body, orgName: req.body.orgName || req.body.hospitalName };
         const validatedData = orgSignupSchema.parse(body);
-        const { name, email, password, orgName, industry } = validatedData;
+        const { name, email, password, orgName, industry, primaryLocation, services } = validatedData;
 
         const existingUser = await User.findOne({ email });
         if (existingUser) return res.status(400).json({ message: "Email already exists" });
@@ -137,12 +138,33 @@ router.post("/signup", authLimiter, async (req, res) => {
             email,
             industry: industry || "other",
             slug,
-            locations: [{ name: "Main Location", address: "Default Location" }]
+            locations: [{
+                name:     primaryLocation?.name || "Main Location",
+                address:  primaryLocation?.address || "Default Location",
+                timezone: primaryLocation?.timezone || "Asia/Kolkata"
+            }]
         });
+
+        const seedServices = Array.isArray(services) && services.length
+            ? services
+            : [{ name: "Default Service", category: "General" }];
+
+        const defaultDuration = org.settings?.defaultSessionDuration ?? 5;
+        await Service.insertMany(seedServices.map(s => ({
+            organizationId: org._id,
+            locationId:     org.locations?.[0]?._id,
+            name:           s.name,
+            description:    s.description,
+            category:       s.category,
+            avgSessionDuration: s.avgSessionDuration ?? defaultDuration,
+            maxCapacity:        s.maxCapacity ?? null,
+            isActive: true,
+        })));
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const user = await User.create({
             organizationId: org._id,
+            locationId:     org.locations?.[0]?._id,
             role:           "ORG_ADMIN",
             name,
             email,
@@ -499,6 +521,11 @@ router.post("/google/complete", async (req, res) => {
         // Accept both orgName (new) and hospitalName (legacy)
         const { token } = req.body;
         const orgName   = req.body.orgName || req.body.hospitalName;
+        const allowedIndustries = ["healthcare", "banking", "government", "education", "salon", "retail", "other"];
+        const industry = allowedIndustries.includes(req.body.industry) ? req.body.industry : "other";
+
+        const primaryLocation = req.body.primaryLocation;
+        const services = req.body.services;
 
         if (!token || !orgName?.trim()) {
             return res.status(400).json({ message: "Token and organization name are required" });
@@ -535,10 +562,30 @@ router.post("/google/complete", async (req, res) => {
         const org = await Organization.create({
             name:      orgName.trim(),
             email,
-            industry:  "other",
+            industry,
             slug,
-            locations: [{ name: "Main Location", address: "Default Location" }]
+            locations: [{
+                name:     primaryLocation?.name || "Main Location",
+                address:  primaryLocation?.address || "Default Location",
+                timezone: primaryLocation?.timezone || "Asia/Kolkata"
+            }]
         });
+
+        const seedServices = Array.isArray(services) && services.length
+            ? services
+            : [{ name: "Default Service", category: "General" }];
+
+        const defaultDuration = org.settings?.defaultSessionDuration ?? 5;
+        await Service.insertMany(seedServices.map(s => ({
+            organizationId: org._id,
+            locationId:     org.locations?.[0]?._id,
+            name:           s.name,
+            description:    s.description,
+            category:       s.category,
+            avgSessionDuration: s.avgSessionDuration ?? defaultDuration,
+            maxCapacity:        s.maxCapacity ?? null,
+            isActive: true,
+        })));
 
         const newUser = await User.create({
             organizationId: org._id,
