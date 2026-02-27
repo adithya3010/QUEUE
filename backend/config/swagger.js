@@ -34,6 +34,12 @@ const swaggerOptions = {
           name: 'token',
           description: 'JWT token stored in httpOnly cookie'
         },
+        AdminBearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'Admin JWT — obtain from POST /admin/login response, then paste the accessToken value here'
+        },
         ApiKeyAuth: {
           type: 'apiKey',
           in: 'header',
@@ -82,7 +88,7 @@ const swaggerOptions = {
         },
         Patient: {
           type: 'object',
-          required: ['name', 'age', 'phoneNumber', 'doctorId'],
+          required: ['name', 'number', 'doctorId'],
           properties: {
             id: {
               type: 'string',
@@ -94,17 +100,9 @@ const swaggerOptions = {
               description: 'Patient full name',
               example: 'Jane Doe'
             },
-            age: {
-              type: 'number',
-              minimum: 0,
-              maximum: 150,
-              description: 'Patient age',
-              example: 35
-            },
-            phoneNumber: {
+            number: {
               type: 'string',
-              pattern: '^[0-9]{10}$',
-              description: '10-digit phone number',
+              description: 'Patient phone number',
               example: '9876543210'
             },
             tokenNumber: {
@@ -181,6 +179,14 @@ const swaggerOptions = {
       }
     },
     tags: [
+      {
+        name: 'Admin Auth',
+        description: 'Hospital admin registration and login. Call POST /admin/signup → POST /admin/login → copy the accessToken from the response → click Authorize → paste under AdminBearerAuth.'
+      },
+      {
+        name: 'Admin — Staff',
+        description: 'Create doctors and receptionists (requires AdminBearerAuth)'
+      },
       {
         name: 'Authentication',
         description: 'Doctor authentication endpoints'

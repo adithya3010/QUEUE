@@ -1,0 +1,1037 @@
+======================================================================
+SMARTQUEUE — COMPLETE API TEST REPORT
+Generated : 2026-02-27T09:20:19.446Z
+Base URL  : http://localhost:5000
+Prefix    : tst_1772183973535
+Duration  : 45.9s
+Result    : 43 passed / 5 failed / 4 skipped (52 total)
+======================================================================
+
+PROVISIONED RESOURCES
+  hospitalId    : 69a161a5d7ee62a55462063c
+  doctorId      : 69a161a7d7ee62a55462064a
+  apiKey        : sq_test_NjlhMTYxYWFkN2VlNjJhNTU0NjIwNjVh_f1566b91224f049bdeffa8c775425dbc3fdb41a42ef8aa2f0db1263f279137cd
+  queueUniqueId : 8b21d2ae-5177-4d13-bc92-4e0f2705a9f3
+  appointmentId1: 69a161c7d7ee62a5546206eb
+
+
+----------------------------------------------------------------------
+  SECTION 1 — Admin Auth  (/api/admin/*)
+----------------------------------------------------------------------
+
+[PASS] POST /api/admin/signup
+  Name        : POST /admin/signup — create hospital admin
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "message": "Admin signup successful",
+      "admin": {
+        "id": "69a161a6d7ee62a55462063f",
+        "hospitalId": "69a161a5d7ee62a55462063c",
+        "role": "HOSPITAL_ADMIN",
+        "name": "Test Admin",
+        "email": "admin_1772183973535@testsmartqueue.com"
+      }
+    }
+
+[PASS] POST /api/admin/login
+  Name        : POST /admin/login — get accessToken
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "message": "Admin login successful",
+      "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZG1pbklkIjoiNjlhMTYxYTZkN2VlNjJhNTU0NjIwNjNmIiwidXNlcklkIjoiNjlhMTYxYTZkN2VlNjJhNTU0NjIwNjNmIiwicm9sZSI6IkhPU1BJVEFMX0FETUlOIiwiaG9zcGl0YWxJZCI6IjY5YTE2MWE1ZDdlZTYyYTU1NDYyMDYzYyIsImJyYW5jaElkIjoiNjlhMTYxYTVkN2VlNjJhNTU0NjIwNjNkIiwiaWF0IjoxNzcyMTgzOTc0LCJleHAiOjE3NzIxODQ4NzR9.89YtFFnb6RjwiMfNO8lofJph2CDMx362PQMialvanmQ",
+      "admin": {
+        "id": "69a161a6d7ee62a55462063f",
+        "hospitalId": "69a161a5d7ee62a55462063c",
+        "role": "HOSPITAL_ADMIN",
+        "name": "Test Admin",
+        "email": "admin_1772183973535@testsmartqueue.com"
+      }
+    }
+
+[PASS] GET /api/admin/info
+  Name        : GET /admin/info — admin profile
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "metrics": {
+        "totalPatientsSeen": 0,
+        "avgWaitTimeOverall": 0
+      },
+      "_id": "69a161a6d7ee62a55462063f",
+      "hospitalId": "69a161a5d7ee62a55462063c",
+      "branchId": "69a161a5d7ee62a55462063d",
+      "role": "HOSPITAL_ADMIN",
+      "name": "Test Admin",
+      "email": "admin_1772183973535@testsmartqueue.com",
+      "avgConsultationTime": 5,
+      "availability": "Available",
+      "pauseMessage": "",
+      "assignedDoctors": [],
+      "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZG1pbklkIjoiNjlhMTYxYTZkN2VlNjJhNTU0NjIwNjNmIiwidXNlcklkIjoiNjlhMTYxYTZkN2VlNjJhNTU0NjIwNjNmIiwicm9sZSI6IkhPU1BJVEFMX0FETUlOIiwiaG9zcGl0YWxJZCI6IjY5YTE2MWE1ZDdlZTYyYTU1NDYyMDYzYyIsImJyYW5jaElkIjoiNjlhMTYxYTVkN2VlNjJhNTU0NjIwNjNkIiwidG9rZW5JZCI6IjQzODc1MzFmMDU2Zjc5M2E4MDIwNjYyYTAwZTY3YzI3MjUxOGViMzAxMTZlZmQ2OThjNDdhNDlhYjI2ZmZiZTgiLCJpYXQiOjE3NzIxODM5NzQsImV4cCI6MTc3Mjc4ODc3NH0.X-9rAkHSv64mbyFJz5lEc7HowRmP4cRc8oGwy4RoY4g",
+      "refreshTokenExpiry": "2026-03-06T09:19:34.736Z",
+      "schedule": [],
+      "createdAt": "2026-02-27T09:19
+      …(truncated)
+
+----------------------------------------------------------------------
+  SECTION 2 — Admin Staff  (/api/admin/staff/*)
+----------------------------------------------------------------------
+
+[PASS] POST /api/admin/staff/doctor
+  Name        : POST /admin/staff/doctor — create doctor
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "message": "Doctor created successfully",
+      "doctor": {
+        "id": "69a161a7d7ee62a55462064a",
+        "name": "Dr. Test",
+        "email": "doctor_1772183973535@testsmartqueue.com",
+        "specialization": "Cardiology"
+      }
+    }
+
+[PASS] POST /api/admin/staff/receptionist
+  Name        : POST /admin/staff/receptionist — create receptionist
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "message": "Receptionist created successfully",
+      "receptionist": {
+        "id": "69a161a8d7ee62a554620652",
+        "name": "Test Receptionist",
+        "email": "recep_1772183973535@testsmartqueue.com",
+        "assignedDoctors": [
+          "69a161a7d7ee62a55462064a"
+        ]
+      }
+    }
+
+[PASS] GET /api/admin/staff
+  Name        : GET /admin/staff — list staff
+  HTTP Status : 200 (expected 200)
+  Response    :
+    [
+      {
+        "metrics": {
+          "totalPatientsSeen": 0,
+          "avgWaitTimeOverall": 0
+        },
+        "_id": "69a161a7d7ee62a55462064a",
+        "hospitalId": "69a161a5d7ee62a55462063c",
+        "branchId": "69a161a5d7ee62a55462063d",
+        "role": "DOCTOR",
+        "name": "Dr. Test",
+        "email": "doctor_1772183973535@testsmartqueue.com",
+        "specialization": "Cardiology",
+        "avgConsultationTime": 5,
+        "availability": "Available",
+        "pauseMessage": "",
+        "assignedDoctors": [],
+        "refreshTokenExpiry": null,
+        "schedule": [],
+        "createdAt": "2026-02-27T09:19:35.509Z",
+        "updatedAt": "2026-02-27T09:19:35.509Z",
+        "__v": 0
+      },
+      {
+        "metrics": {
+          "totalPatientsSeen": 0,
+          "avgWaitTimeOverall": 0
+        },
+        "_id": "69a161a8d7ee62a554620652",
+        "hospitalId": "69a161a5d7ee62a55462063c",
+        "branchId": "69a161a5d7ee62a55462063d",
+        "role": "RECEPTIONIST",
+        "name": "Test Receptionist",
+        "email": "recep_1772183973535@testsmartqueue.com",
+        "avgConsultationTime": 5,
+        "a
+      …(truncated)
+
+----------------------------------------------------------------------
+  SECTION 3 — Setup: API Key + Doctor Login
+----------------------------------------------------------------------
+
+[PASS] POST /api/hospitals/keys
+  Name        : POST /hospitals/keys — generate B2B API key
+  HTTP Status : 201 (expected 201)
+  Response    :
+    {
+      "success": true,
+      "message": "Key generated successfully. This will only be shown once.",
+      "key": "sq_test_NjlhMTYxYWFkN2VlNjJhNTU0NjIwNjVh_f1566b91224f049bdeffa8c775425dbc3fdb41a42ef8aa2f0db1263f279137cd",
+      "keyRecord": {
+        "id": "69a161aad7ee62a55462065a",
+        "name": "tst_1772183973535 Key",
+        "prefix": "sq_test_",
+        "createdAt": "2026-02-27T09:19:38.457Z"
+      }
+    }
+
+[PASS] POST /api/auth/login
+  Name        : POST /auth/login — doctor login
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "message": "Login successful",
+      "user": {
+        "id": "69a161a7d7ee62a55462064a",
+        "hospitalId": "69a161a5d7ee62a55462063c",
+        "branchId": "69a161a5d7ee62a55462063d",
+        "role": "DOCTOR",
+        "name": "Dr. Test",
+        "email": "doctor_1772183973535@testsmartqueue.com",
+        "assignedDoctors": []
+      }
+    }
+
+----------------------------------------------------------------------
+  SECTION 4 — Internal Queue Routes  (/api/queue/*)
+----------------------------------------------------------------------
+
+[FAIL] POST /api/queue/add
+  Name        : POST /queue/add — enqueue patient
+  HTTP Status : 200 (expected 201)
+  Response    :
+    {
+      "message": "Patient added successfully",
+      "patient": {
+        "hospitalId": "69a161a5d7ee62a55462063c",
+        "branchId": "69a161a5d7ee62a55462063d",
+        "name": "Internal Test Patient",
+        "doctorId": "69a161a7d7ee62a55462064a",
+        "description": "Test visit",
+        "notes": "",
+        "tokenNumber": 1,
+        "sortOrder": 1,
+        "status": "waiting",
+        "number": "9876543210",
+        "uniqueLinkId": "b7ed06f3-b560-4feb-bdd4-6e4c6115ee5e",
+        "_id": "69a161abd7ee62a554620660",
+        "createdAt": "2026-02-27T09:19:39.639Z",
+        "__v": 0
+      },
+      "statusLink": "/api/queue/status/b7ed06f3-b560-4feb-bdd4-6e4c6115ee5e"
+    }
+
+[FAIL] POST /api/queue/add
+  Name        : POST /queue/add — second patient (for cancel)
+  HTTP Status : 200 (expected 201)
+  Response    :
+    {
+      "message": "Patient added successfully",
+      "patient": {
+        "hospitalId": "69a161a5d7ee62a55462063c",
+        "branchId": "69a161a5d7ee62a55462063d",
+        "name": "Cancel Patient",
+        "doctorId": "69a161a7d7ee62a55462064a",
+        "notes": "",
+        "tokenNumber": 2,
+        "sortOrder": 2,
+        "status": "waiting",
+        "number": "9876543211",
+        "uniqueLinkId": "eb9b4e5f-55e3-4395-a514-4a417f29b7dd",
+        "_id": "69a161acd7ee62a554620664",
+        "createdAt": "2026-02-27T09:19:40.412Z",
+        "__v": 0
+      },
+      "statusLink": "/api/queue/status/eb9b4e5f-55e3-4395-a514-4a417f29b7dd"
+    }
+
+[PASS] GET /api/queue/69a161a7d7ee62a55462064a
+  Name        : GET /queue/:doctorId — waiting queue for doctor
+  HTTP Status : 200 (expected 200)
+  Response    :
+    [
+      {
+        "_id": "69a161abd7ee62a554620660",
+        "hospitalId": "69a161a5d7ee62a55462063c",
+        "branchId": "69a161a5d7ee62a55462063d",
+        "name": "Internal Test Patient",
+        "doctorId": "69a161a7d7ee62a55462064a",
+        "description": "Test visit",
+        "notes": "",
+        "tokenNumber": 1,
+        "sortOrder": 1,
+        "status": "waiting",
+        "number": "9876543210",
+        "uniqueLinkId": "b7ed06f3-b560-4feb-bdd4-6e4c6115ee5e",
+        "createdAt": "2026-02-27T09:19:39.639Z",
+        "__v": 0,
+        "waitMinutes": 0,
+        "etaTime": "2026-02-27T09:19:40.765Z",
+        "isTopThree": true
+      },
+      {
+        "_id": "69a161acd7ee62a554620664",
+        "hospitalId": "69a161a5d7ee62a55462063c",
+        "branchId": "69a161a5d7ee62a55462063d",
+        "name": "Cancel Patient",
+        "doctorId": "69a161a7d7ee62a55462064a",
+        "notes": "",
+        "tokenNumber": 2,
+        "sortOrder": 2,
+        "status": "waiting",
+        "number": "9876543211",
+        "uniqueLinkId": "eb9b4e5f-55e3-4395-a514-4a417f29b7dd",
+        "createdAt": "2026-02-27T09:19:40.412Z",
+       
+      …(truncated)
+
+[SKIP] GET /api/queue/status/missing
+  Name        : GET /queue/status/:uniqueLinkId — public patient status
+  HTTP Status : N/A (expected 404)
+  Note        : Prerequisite missing
+
+[PASS] GET /api/queue/summary/today
+  Name        : GET /queue/summary/today — doctor daily summary
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "totalToday": 2,
+      "completed": 0,
+      "cancelled": 0,
+      "waiting": 2,
+      "avgConsultTime": 0,
+      "busiestHour": "2pm",
+      "noShows": 0
+    }
+
+[PASS] GET /api/queue/history/
+  Name        : GET /queue/history/ — queue history
+  HTTP Status : 200 (expected 200)
+  Response    :
+    []
+
+[SKIP] PUT /api/queue/prioritise/missing
+  Name        : PUT /queue/prioritise/:id — prioritize patient
+  HTTP Status : N/A (expected 200)
+  Note        : Prerequisite missing
+
+[SKIP] PUT /api/queue/cancel/missing
+  Name        : PUT /queue/cancel/:id — cancel a patient
+  HTTP Status : N/A (expected 200)
+  Note        : Prerequisite missing
+
+[SKIP] PUT /api/queue/complete/missing
+  Name        : PUT /queue/complete/:id — complete a patient
+  HTTP Status : N/A (expected 200)
+  Note        : Prerequisite missing
+
+----------------------------------------------------------------------
+  SECTION 5 — B2B Phase 1: Discovery  (/api/v1/*)
+----------------------------------------------------------------------
+
+[PASS] GET /api/v1/info
+  Name        : GET /v1/info — hospital info
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "id": "69a161a5d7ee62a55462063c",
+        "name": "tst_1772183973535 Hospital",
+        "email": "admin_1772183973535@testsmartqueue.com",
+        "subscriptionPlan": "Basic",
+        "status": "Active",
+        "branchCount": 1
+      }
+    }
+
+[PASS] GET /api/v1/branches
+  Name        : GET /v1/branches — list branches
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": [
+        {
+          "id": "69a161a5d7ee62a55462063d",
+          "name": "Main Branch",
+          "address": "Local Branch",
+          "isActive": true
+        }
+      ],
+      "total": 1
+    }
+
+[PASS] GET /api/v1/doctors
+  Name        : GET /v1/doctors — list all doctors
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": [
+        {
+          "id": "69a161a7d7ee62a55462064a",
+          "name": "Dr. Test",
+          "specialization": "Cardiology",
+          "availability": "Available",
+          "avgConsultationTime": 5,
+          "branchId": "69a161a5d7ee62a55462063d",
+          "pauseMessage": null,
+          "workingDays": []
+        }
+      ],
+      "total": 1
+    }
+
+[PASS] GET /api/v1/doctors?specialty=Cardiology
+  Name        : GET /v1/doctors?specialty=Cardiology — filter by specialty
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": [
+        {
+          "id": "69a161a7d7ee62a55462064a",
+          "name": "Dr. Test",
+          "specialization": "Cardiology",
+          "availability": "Available",
+          "avgConsultationTime": 5,
+          "branchId": "69a161a5d7ee62a55462063d",
+          "pauseMessage": null,
+          "workingDays": []
+        }
+      ],
+      "total": 1
+    }
+
+[PASS] GET /api/v1/doctors/69a161a7d7ee62a55462064a/slots?date=2026-02-27
+  Name        : GET /v1/doctors/:id/slots?date=2026-02-27 — available slots
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "doctorId": "69a161a7d7ee62a55462064a",
+        "doctorName": "Dr. Test",
+        "specialization": "Cardiology",
+        "availability": "Available",
+        "date": "2026-02-27",
+        "slots": [
+          {
+            "time": "14:50",
+            "label": "2:50 PM"
+          },
+          {
+            "time": "14:55",
+            "label": "2:55 PM"
+          },
+          {
+            "time": "15:00",
+            "label": "3:00 PM"
+          },
+          {
+            "time": "15:05",
+            "label": "3:05 PM"
+          },
+          {
+            "time": "15:10",
+            "label": "3:10 PM"
+          },
+          {
+            "time": "15:15",
+            "label": "3:15 PM"
+          },
+          {
+            "time": "15:20",
+            "label": "3:20 PM"
+          },
+          {
+            "time": "15:25",
+            "label": "3:25 PM"
+          },
+          {
+            "time": "15:30",
+            "label": "3:30 PM"
+          },
+          {
+            "time": "15:35",
+            "label": "3:35 PM"
+          },
+          {
+            "time": "15:40",
+            "label": "3:40 PM"
+          },
+          {
+            "time": 
+      …(truncated)
+
+[PASS] GET /api/v1/doctor/69a161a7d7ee62a55462064a/status
+  Name        : GET /v1/doctor/:id/status — availability status
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "_id": "69a161a7d7ee62a55462064a",
+        "avgConsultationTime": 5,
+        "availability": "Available"
+      }
+    }
+
+----------------------------------------------------------------------
+  SECTION 6 — B2B Phase 2: Queue Management  (/api/v1/queue/*)
+----------------------------------------------------------------------
+
+[PASS] POST /api/v1/queue
+  Name        : POST /v1/queue — enqueue single patient
+  HTTP Status : 201 (expected 201)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "id": "69a161b4d7ee62a554620697",
+        "externalPatientId": "tst_1772183973535_p1",
+        "tokenNumber": 3,
+        "trackingUrl": "http://localhost:3000/status/8b21d2ae-5177-4d13-bc92-4e0f2705a9f3"
+      }
+    }
+
+[PASS] POST /api/v1/queue
+  Name        : POST /v1/queue — enqueue patient for cancel test
+  HTTP Status : 201 (expected 201)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "id": "69a161bad7ee62a5546206a5",
+        "externalPatientId": "tst_1772183973535_p2",
+        "tokenNumber": 4,
+        "trackingUrl": "http://localhost:3000/status/d43ac26e-d6fa-41cb-a556-700ef0286de1"
+      }
+    }
+
+[PASS] POST /api/v1/queue/bulk
+  Name        : POST /v1/queue/bulk — enqueue 3 patients at once
+  HTTP Status : 201 (expected 201)
+  Response    :
+    {
+      "success": true,
+      "message": "3 patients added to queue",
+      "data": [
+        {
+          "id": "69a161bdd7ee62a5546206b0",
+          "externalPatientId": "tst_1772183973535_b1",
+          "tokenNumber": 5,
+          "trackingUrl": "http://localhost:3000/status/27ef6a71-a777-407c-9acb-d40e440bf508"
+        },
+        {
+          "id": "69a161bdd7ee62a5546206b1",
+          "externalPatientId": "tst_1772183973535_b2",
+          "tokenNumber": 6,
+          "trackingUrl": "http://localhost:3000/status/ea84bfd2-207c-4c86-8b0d-866fda3065da"
+        },
+        {
+          "id": "69a161bdd7ee62a5546206b2",
+          "externalPatientId": "tst_1772183973535_b3",
+          "tokenNumber": 7,
+          "trackingUrl": "http://localhost:3000/status/0d232902-5ed3-4a05-9885-68c51c180065"
+        }
+      ]
+    }
+
+[PASS] GET /api/v1/queue?doctorId=69a161a7d7ee62a55462064a&status=waiting
+  Name        : GET /v1/queue — list waiting patients
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": [
+        {
+          "id": "69a161b4d7ee62a554620697",
+          "externalPatientId": "tst_1772183973535_p1",
+          "name": null,
+          "tokenNumber": 3,
+          "position": 1,
+          "status": "waiting",
+          "doctorId": "69a161a7d7ee62a55462064a",
+          "branchId": "69a161a5d7ee62a55462063d",
+          "description": "B2B visit 1",
+          "trackingUrl": "http://localhost:3000/status/8b21d2ae-5177-4d13-bc92-4e0f2705a9f3",
+          "createdAt": "2026-02-27T09:19:48.918Z"
+        },
+        {
+          "id": "69a161bad7ee62a5546206a5",
+          "externalPatientId": "tst_1772183973535_p2",
+          "name": null,
+          "tokenNumber": 4,
+          "position": 2,
+          "status": "waiting",
+          "doctorId": "69a161a7d7ee62a55462064a",
+          "branchId": "69a161a5d7ee62a55462063d",
+          "description": null,
+          "trackingUrl": "http://localhost:3000/status/d43ac26e-d6fa-41cb-a556-700ef0286de1",
+          "createdAt": "2026-02-27T09:19:54.285Z"
+        },
+        {
+          "id": "69a161bdd7ee62a5546206b0",
+          "ext
+      …(truncated)
+
+[PASS] GET /api/v1/queue/stats
+  Name        : GET /v1/queue/stats — live queue statistics
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "totalWaiting": 7,
+        "activeDoctors": 1,
+        "perDoctor": [
+          {
+            "doctorId": "69a161a7d7ee62a55462064a",
+            "doctorName": "Dr. Test",
+            "availability": "Available",
+            "waitingCount": 7,
+            "estimatedClearTimeMinutes": 35
+          }
+        ]
+      }
+    }
+
+[PASS] GET /api/v1/queue/8b21d2ae-5177-4d13-bc92-4e0f2705a9f3
+  Name        : GET /v1/queue/:uniqueLinkId — patient queue status
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "status": "waiting",
+        "tokenNumber": 3,
+        "position": 3,
+        "estimatedWaitTimeMinutes": 15
+      }
+    }
+
+[PASS] PUT /api/v1/queue/8b21d2ae-5177-4d13-bc92-4e0f2705a9f3/priority
+  Name        : PUT /v1/queue/:id/priority — move patient to front
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "message": "Patient moved to front of queue",
+      "tokenNumber": 3
+    }
+
+[PASS] PUT /api/v1/queue/8b21d2ae-5177-4d13-bc92-4e0f2705a9f3/notes
+  Name        : PUT /v1/queue/:id/notes — attach clinical note
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "message": "Notes updated",
+      "id": "69a161b4d7ee62a554620697"
+    }
+
+[PASS] GET /api/v1/doctor/69a161a7d7ee62a55462064a/queue
+  Name        : GET /v1/doctor/:id/queue — all waiting patients for doctor
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": [
+        {
+          "_id": "69a161abd7ee62a554620660",
+          "tokenNumber": 1,
+          "status": "waiting",
+          "createdAt": "2026-02-27T09:19:39.639Z"
+        },
+        {
+          "_id": "69a161acd7ee62a554620664",
+          "tokenNumber": 2,
+          "status": "waiting",
+          "createdAt": "2026-02-27T09:19:40.412Z"
+        },
+        {
+          "_id": "69a161b4d7ee62a554620697",
+          "externalPatientId": "tst_1772183973535_p1",
+          "tokenNumber": 3,
+          "status": "waiting",
+          "createdAt": "2026-02-27T09:19:48.918Z"
+        },
+        {
+          "_id": "69a161bad7ee62a5546206a5",
+          "externalPatientId": "tst_1772183973535_p2",
+          "tokenNumber": 4,
+          "status": "waiting",
+          "createdAt": "2026-02-27T09:19:54.285Z"
+        },
+        {
+          "_id": "69a161bdd7ee62a5546206b0",
+          "externalPatientId": "tst_1772183973535_b1",
+          "tokenNumber": 5,
+          "status": "waiting",
+          "createdAt": "2026-02-27T09:19:57.030Z"
+        },
+        {
+          "_id": "69a161bdd7ee62a5546206b1",
+          "exter
+      …(truncated)
+
+[PASS] DELETE /api/v1/queue/d43ac26e-d6fa-41cb-a556-700ef0286de1
+  Name        : DELETE /v1/queue/:id — cancel queue entry
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "message": "Queue entry cancelled"
+    }
+
+----------------------------------------------------------------------
+  SECTION 7 — B2B Phase 3: Appointment Lifecycle  (/api/v1/appointments/*)
+----------------------------------------------------------------------
+
+[PASS] POST /api/v1/appointments/book
+  Name        : POST /v1/appointments/book — book appointment (arrive test)
+  HTTP Status : 201 (expected 201)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "id": "69a161c7d7ee62a5546206eb",
+        "scheduledAt": "2026-02-28T09:20:05.797Z",
+        "status": "scheduled"
+      }
+    }
+
+[PASS] POST /api/v1/appointments/book
+  Name        : POST /v1/appointments/book — book appointment (cancel test)
+  HTTP Status : 201 (expected 201)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "id": "69a161c9d7ee62a5546206f3",
+        "scheduledAt": "2026-03-01T09:20:07.366Z",
+        "status": "scheduled"
+      }
+    }
+
+[PASS] GET /api/v1/appointments?doctorId=69a161a7d7ee62a55462064a&status=scheduled
+  Name        : GET /v1/appointments — list appointments
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": [
+        {
+          "_id": "69a161c7d7ee62a5546206eb",
+          "branchId": "69a161a5d7ee62a55462063d",
+          "doctorId": "69a161a7d7ee62a55462064a",
+          "patientName": "Arrive Patient",
+          "phone": "9000000001",
+          "scheduledAt": "2026-02-28T09:20:05.797Z",
+          "status": "scheduled",
+          "notes": "Arrive test",
+          "createdAt": "2026-02-27T09:20:07.156Z"
+        },
+        {
+          "_id": "69a161c9d7ee62a5546206f3",
+          "branchId": "69a161a5d7ee62a55462063d",
+          "doctorId": "69a161a7d7ee62a55462064a",
+          "patientName": "Cancel Patient",
+          "phone": "9000000002",
+          "scheduledAt": "2026-03-01T09:20:07.366Z",
+          "status": "scheduled",
+          "createdAt": "2026-02-27T09:20:09.032Z"
+        }
+      ],
+      "total": 2
+    }
+
+[PASS] PUT /api/v1/appointments/69a161c7d7ee62a5546206eb/arrive
+  Name        : PUT /v1/appointments/:id/arrive — mark arrived → auto-queue
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "message": "Patient arrived and added to live queue",
+      "data": {
+        "appointmentId": "69a161c7d7ee62a5546206eb",
+        "queueEntryId": "69a161cbd7ee62a554620704",
+        "tokenNumber": 8,
+        "trackingUrl": "http://localhost:3000/status/b953fab0-023d-45c1-97cd-6fe186747624"
+      }
+    }
+
+[PASS] PUT /api/v1/appointments/69a161c9d7ee62a5546206f3/cancel
+  Name        : PUT /v1/appointments/:id/cancel — cancel appointment
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "message": "Appointment cancelled",
+      "id": "69a161c9d7ee62a5546206f3"
+    }
+
+----------------------------------------------------------------------
+  SECTION 8 — B2B Phase 4: Analytics  (/api/v1/analytics/*)
+----------------------------------------------------------------------
+
+[PASS] GET /api/v1/analytics/summary?period=today
+  Name        : GET /v1/analytics/summary?period=today
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "period": "today",
+        "from": "2026-02-26T18:30:00.000Z",
+        "to": "2026-02-27T09:20:13.120Z",
+        "total": 8,
+        "completed": 0,
+        "cancelled": 1,
+        "waiting": 7,
+        "completionRate": "0%",
+        "avgWaitMinutes": null
+      }
+    }
+
+[PASS] GET /api/v1/analytics/summary?period=week
+  Name        : GET /v1/analytics/summary?period=week
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "period": "week",
+        "from": "2026-02-20T18:30:00.000Z",
+        "to": "2026-02-27T09:20:13.793Z",
+        "total": 8,
+        "completed": 0,
+        "cancelled": 1,
+        "waiting": 7,
+        "completionRate": "0%",
+        "avgWaitMinutes": null
+      }
+    }
+
+[PASS] GET /api/v1/analytics/summary?period=month
+  Name        : GET /v1/analytics/summary?period=month
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "period": "month",
+        "from": "2026-01-31T18:30:00.000Z",
+        "to": "2026-02-27T09:20:14.471Z",
+        "total": 8,
+        "completed": 0,
+        "cancelled": 1,
+        "waiting": 7,
+        "completionRate": "0%",
+        "avgWaitMinutes": null
+      }
+    }
+
+[PASS] GET /api/v1/analytics/doctor/69a161a7d7ee62a55462064a?period=today
+  Name        : GET /v1/analytics/doctor/:id — per-doctor analytics
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "doctorId": "69a161a7d7ee62a55462064a",
+        "name": "Dr. Test",
+        "specialization": "Cardiology",
+        "availability": "Available",
+        "avgConsultationTime": 5,
+        "period": "today",
+        "total": 8,
+        "completed": 0,
+        "cancelled": 1,
+        "waiting": 7,
+        "avgWaitMinutes": null,
+        "allTimePatientsSeen": 0
+      }
+    }
+
+[PASS] GET /api/v1/analytics/wait-times?date=2026-02-27
+  Name        : GET /v1/analytics/wait-times?date=2026-02-27 — hourly breakdown
+  HTTP Status : 200 (expected 200)
+  Response    :
+    {
+      "success": true,
+      "data": {
+        "date": "2026-02-27",
+        "peakHour": "09:00",
+        "hours": [
+          {
+            "hour": 0,
+            "label": "00:00",
+            "total": 0,
+            "completed": 0,
+            "avgWaitMinutes": null
+          },
+          {
+            "hour": 1,
+            "label": "01:00",
+            "total": 0,
+            "completed": 0,
+            "avgWaitMinutes": null
+          },
+          {
+            "hour": 2,
+            "label": "02:00",
+            "total": 0,
+            "completed": 0,
+            "avgWaitMinutes": null
+          },
+          {
+            "hour": 3,
+            "label": "03:00",
+            "total": 0,
+            "completed": 0,
+            "avgWaitMinutes": null
+          },
+          {
+            "hour": 4,
+            "label": "04:00",
+            "total": 0,
+            "completed": 0,
+            "avgWaitMinutes": null
+          },
+          {
+            "hour": 5,
+            "label": "05:00",
+            "total": 0,
+            "completed": 0,
+            "avgWaitMinutes": null
+          },
+          {
+            "hour": 6,
+            "label": "06:00",
+            "total": 0,
+          
+      …(truncated)
+
+----------------------------------------------------------------------
+  SECTION 9 — B2B Phase 5: Developer Tools  (/api/v1/webhooks/*)
+----------------------------------------------------------------------
+
+[PASS] POST /api/v1/webhooks/test
+  Name        : POST /v1/webhooks/test — fire test event
+  HTTP Status : 404 (expected 200|404)
+  Note        : 200 = dispatched, 404 = no webhooks registered (both are valid)
+  Response    :
+    {
+      "success": false,
+      "error": "No active webhooks registered for event \"queue.created\""
+    }
+
+----------------------------------------------------------------------
+  SECTION 10 — Validation & Security Edge Cases
+----------------------------------------------------------------------
+
+[PASS] GET /api/v1/info
+  Name        : GET /v1/info — no API key → 401
+  HTTP Status : 401 (expected 401)
+  Note        : Missing x-api-key must return 401
+  Response    :
+    {
+      "success": false,
+      "error": "Unauthorized",
+      "message": "Missing x-api-key header"
+    }
+
+[FAIL] GET /api/v1/info
+  Name        : GET /v1/info — invalid API key → 401
+  HTTP Status : 500 (expected 401)
+  Note        : Bad key must return 401
+  Response    :
+    {
+      "success": false,
+      "error": "Server Error",
+      "message": "Error verifying API Key",
+      "detail": "Cast to ObjectId failed for value \"�{ږ'\" (type string) at path \"_id\" for model \"ApiKey\""
+    }
+
+[PASS] POST /api/v1/queue
+  Name        : POST /v1/queue — missing doctorId → 400
+  HTTP Status : 400 (expected 400)
+  Note        : doctorId is required
+  Response    :
+    {
+      "success": false,
+      "error": "Invalid doctorId"
+    }
+
+[PASS] POST /api/v1/queue/bulk
+  Name        : POST /v1/queue/bulk — 51 patients → 400 (limit is 50)
+  HTTP Status : 400 (expected 400)
+  Note        : Bulk limit is 50 — should return 400
+  Response    :
+    {
+      "success": false,
+      "error": "Maximum 50 patients per bulk request"
+    }
+
+[PASS] GET /api/v1/queue/00000000-0000-0000-0000-000000000000
+  Name        : GET /v1/queue/nonexistent-uuid → 404
+  HTTP Status : 404 (expected 404)
+  Note        : Unknown uniqueLinkId must return 404
+  Response    :
+    {
+      "success": false,
+      "error": "Queue entry not found"
+    }
+
+[FAIL] POST /api/admin/login
+  Name        : POST /admin/login — wrong password → 401
+  HTTP Status : 429 (expected 401)
+  Note        : Invalid credentials must return 401
+  Response    :
+    {
+      "message": "Too many authentication attempts, please try again after 15 minutes"
+    }
+
+[PASS] POST /api/admin/staff/doctor
+  Name        : POST /admin/staff/doctor — no auth → 401
+  HTTP Status : 401 (expected 401)
+  Note        : Protected route must return 401 without token
+  Response    :
+    {
+      "message": "Authentication required"
+    }
+
+[FAIL] POST /api/admin/signup
+  Name        : POST /admin/signup — duplicate email → 400
+  HTTP Status : 429 (expected 400)
+  Note        : Duplicate email must return 400
+  Response    :
+    {
+      "message": "Too many authentication attempts, please try again after 15 minutes"
+    }
+
+======================================================================
+SUMMARY
+======================================================================
+Total   : 52
+Passed  : 43
+Failed  : 5
+Skipped : 4
+
+FAILED TESTS:
+  [200] POST /api/queue/add
+    POST /queue/add — enqueue patient
+    {"message":"Patient added successfully","patient":{"hospitalId":"69a161a5d7ee62a55462063c","branchId":"69a161a5d7ee62a55462063d","name":"Internal Test Patient","doctorId":"69a161a7d7ee62a55462064a","description":"Test visit","notes":"","tokenNumber":1,"sortOrder":1,"status":"waiting","number":"98765
+  [200] POST /api/queue/add
+    POST /queue/add — second patient (for cancel)
+    {"message":"Patient added successfully","patient":{"hospitalId":"69a161a5d7ee62a55462063c","branchId":"69a161a5d7ee62a55462063d","name":"Cancel Patient","doctorId":"69a161a7d7ee62a55462064a","notes":"","tokenNumber":2,"sortOrder":2,"status":"waiting","number":"9876543211","uniqueLinkId":"eb9b4e5f-55
+  [500] GET /api/v1/info
+    GET /v1/info — invalid API key → 401
+    {"success":false,"error":"Server Error","message":"Error verifying API Key","detail":"Cast to ObjectId failed for value \"�{ږ'\" (type string) at path \"_id\" for model \"ApiKey\""}
+  [429] POST /api/admin/login
+    POST /admin/login — wrong password → 401
+    {"message":"Too many authentication attempts, please try again after 15 minutes"}
+  [429] POST /api/admin/signup
+    POST /admin/signup — duplicate email → 400
+    {"message":"Too many authentication attempts, please try again after 15 minutes"}
+
+======================================================================

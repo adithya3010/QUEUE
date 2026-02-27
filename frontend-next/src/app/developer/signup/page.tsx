@@ -37,10 +37,10 @@ export default function AdminSignup() {
                 email: formData.email,
                 password: formData.password
             };
-            await api.post("/admin/auth/signup", signupData);
+            await api.post("/admin/signup", signupData);
 
             // Auto login after signup
-            const loginRes = await api.post("/admin/auth/login", {
+            const loginRes = await api.post("/admin/login", {
                 email: formData.email,
                 password: formData.password
             });

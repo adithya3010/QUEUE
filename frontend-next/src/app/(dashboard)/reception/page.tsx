@@ -108,7 +108,7 @@ export default function ReceptionDashboard() {
         try {
             let allApps: any[] = [];
             for (let doc of receptionist.assignedDoctors || []) {
-                const res = await api.get(`/appointments/doctor/${doc._id}/today`);
+                const res = await api.get(`/appointments/doctor/${doc._id}/upcoming`);
                 allApps = [...allApps, ...res.data];
             }
             allApps.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
@@ -397,7 +397,7 @@ export default function ReceptionDashboard() {
                         onClick={() => setActiveTab('appointment')}
                         className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'appointment' ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'}`}
                     >
-                        <Calendar className="w-4 h-4" /> Appointments
+                        <Calendar className="w-4 h-4" /> Appointments (7 Days)
                     </button>
                 </div>
 
@@ -589,7 +589,7 @@ export default function ReceptionDashboard() {
                                 ) : (
                                     <>
                                         <Calendar className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                                        <h3 className="text-lg font-bold text-neutral-900 dark:text-white">Today's Appointments</h3>
+                                        <h3 className="text-lg font-bold text-neutral-900 dark:text-white">Appointments (7 Days)</h3>
                                     </>
                                 )}
                             </div>
@@ -766,7 +766,8 @@ export default function ReceptionDashboard() {
                                     <table className="w-full text-left border-collapse">
                                         <thead>
                                             <tr className="bg-neutral-100 dark:bg-neutral-800/50 text-neutral-500 dark:text-neutral-400 text-xs uppercase tracking-wider">
-                                                <th className="p-4 font-bold rounded-tl-xl text-center">Time</th>
+                                                <th className="p-4 font-bold rounded-tl-xl">Date</th>
+                                                <th className="p-4 font-bold text-center">Time</th>
                                                 <th className="p-4 font-bold">Patient Details</th>
                                                 <th className="p-4 font-bold hidden sm:table-cell">Doctor</th>
                                                 <th className="p-4 font-bold">Status</th>
@@ -776,6 +777,11 @@ export default function ReceptionDashboard() {
                                         <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700/50 text-sm">
                                             {appointments.map((appt: any) => (
                                                 <tr key={appt._id} className="hover:bg-neutral-50/50 dark:hover:bg-neutral-800/30 transition-colors">
+                                                    <td className="p-4">
+                                                        <span className="font-bold text-neutral-700 dark:text-neutral-300 text-xs">
+                                                            {new Date(appt.scheduledAt).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                                                        </span>
+                                                    </td>
                                                     <td className="p-4 text-center">
                                                         <span className="font-bold text-neutral-900 dark:text-white bg-neutral-100 dark:bg-neutral-800 px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700">
                                                             {new Date(appt.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

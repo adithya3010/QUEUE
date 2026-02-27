@@ -12,7 +12,7 @@ export default function AdminNavbar() {
 
     const handleLogout = async () => {
         try {
-            await api.post("/admin/auth/logout");
+            await api.post("/admin/logout");
             localStorage.removeItem("adminId");
             localStorage.removeItem("adminName");
             localStorage.removeItem("hospitalId");

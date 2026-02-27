@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const ApiKey = require('../models/ApiKey');
 const ApiUsage = require('../models/ApiUsage');
 const bcrypt = require('bcrypt');
@@ -41,6 +42,14 @@ const requireApiKey = async (req, res, next) => {
         const secret = parts[3];
 
         const keyId = Buffer.from(keyIdBase64, 'base64').toString('utf8');
+
+        if (!mongoose.isValidObjectId(keyId)) {
+            return res.status(401).json({
+                success: false,
+                error: 'Unauthorized',
+                message: 'Invalid API Key'
+            });
+        }
 
         const keyRecord = await ApiKey.findOne({ _id: keyId, status: 'Active' }).populate('hospitalId');
 

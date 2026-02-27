@@ -59,24 +59,26 @@ const emitSocketEvent = (room, event, data, hospitalId = null) => {
  *             type: object
  *             required:
  *               - name
- *               - age
- *               - phoneNumber
- *               - doctorId
+ *               - number
  *             properties:
  *               name:
  *                 type: string
  *                 example: Jane Doe
- *               age:
- *                 type: number
- *                 minimum: 0
- *                 maximum: 150
- *                 example: 35
- *               phoneNumber:
+ *               number:
  *                 type: string
- *                 pattern: '^[0-9]{10}$'
- *                 example: 9876543210
+ *                 description: Patient phone number (5–20 characters)
+ *                 example: "9876543210"
+ *               description:
+ *                 type: string
+ *                 description: Visit reason (optional)
+ *                 example: Routine checkup
+ *               notes:
+ *                 type: string
+ *                 description: Receptionist clinical note (optional)
+ *                 example: BP 140/90
  *               doctorId:
  *                 type: string
+ *                 description: Required when called by a Receptionist. Doctors use their own ID automatically.
  *                 example: 507f1f77bcf86cd799439011
  *     responses:
  *       201:
@@ -88,7 +90,7 @@ const emitSocketEvent = (room, event, data, hospitalId = null) => {
  *               properties:
  *                 message:
  *                   type: string
- *                   example: Patient added
+ *                   example: Patient added successfully
  *                 patient:
  *                   $ref: '#/components/schemas/Patient'
  *       400:

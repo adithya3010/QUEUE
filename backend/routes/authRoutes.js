@@ -84,7 +84,8 @@ const authLimiter = process.env.NODE_ENV === 'test'
  * @swagger
  * /auth/signup:
  *   post:
- *     summary: Register a new doctor
+ *     summary: Register a new hospital admin account
+ *     description: Creates a Hospital Admin user and provisions a new Hospital record. Use POST /admin/staff/doctor (with admin auth) to add doctors to an existing hospital.
  *     tags: [Authentication]
  *     requestBody:
  *       required: true
@@ -93,21 +94,21 @@ const authLimiter = process.env.NODE_ENV === 'test'
  *           schema:
  *             type: object
  *             required:
+ *               - hospitalName
  *               - name
- *               - specialization
  *               - email
  *               - password
  *             properties:
+ *               hospitalName:
+ *                 type: string
+ *                 example: City General Hospital
  *               name:
  *                 type: string
- *                 example: Dr. John Smith
- *               specialization:
- *                 type: string
- *                 example: Cardiology
+ *                 example: John Admin
  *               email:
  *                 type: string
  *                 format: email
- *                 example: doctor@hospital.com
+ *                 example: admin@citygeneral.com
  *               password:
  *                 type: string
  *                 format: password
@@ -115,7 +116,7 @@ const authLimiter = process.env.NODE_ENV === 'test'
  *                 example: SecurePass123
  *     responses:
  *       200:
- *         description: Doctor registered successfully
+ *         description: Hospital admin registered successfully
  *         content:
  *           application/json:
  *             schema:
@@ -124,8 +125,6 @@ const authLimiter = process.env.NODE_ENV === 'test'
  *                 message:
  *                   type: string
  *                   example: Signup successful
- *                 doctor:
- *                   $ref: '#/components/schemas/Doctor'
  *       400:
  *         description: Validation error or email already exists
  *         content:

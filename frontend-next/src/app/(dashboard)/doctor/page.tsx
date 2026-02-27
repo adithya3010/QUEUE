@@ -6,12 +6,13 @@ import { useRouter } from "next/navigation";
 import Loader from "@/components/Loader";
 import { io } from "socket.io-client";
 import {
-    Activity, AlertCircle, AlertTriangle, ArrowUp, Calendar, CheckCircle, Clock, FileText, Mail, Power, RefreshCw, Settings, Stethoscope, TrendingUp, User, Users, X
+    Activity, AlertCircle, AlertTriangle, ArrowUp, Calendar, CheckCircle, Clock, FileText, Mail, Power, RefreshCw, Settings, Smartphone, Stethoscope, TrendingUp, User, Users, X
 } from "lucide-react";
 
 export default function DoctorDashboard() {
     const [doctor, setDoctor] = useState<any>(null);
     const [queue, setQueue] = useState<any[]>([]);
+    const [appointments, setAppointments] = useState<any[]>([]);
     const [summary, setSummary] = useState<any>(null);
 
     // Completion state
@@ -59,12 +60,23 @@ export default function DoctorDashboard() {
         }
     }, []);
 
+    const loadUpcomingAppointments = useCallback(async () => {
+        if (!doctor?._id) return;
+        try {
+            const res = await api.get(`/appointments/doctor/${doctor._id}/upcoming`);
+            setAppointments(res.data);
+        } catch (err) {
+            console.error("Load upcoming appointments error", err);
+        }
+    }, [doctor?._id]);
+
     useEffect(() => { loadDoctor(); }, []);
 
     useEffect(() => {
         if (!doctor?._id) return;
         loadQueue();
         loadSummary();
+        loadUpcomingAppointments();
 
         const socket = io("http://localhost:5000", { transports: ["websocket"] });
         socket.on("connect", () => { });
@@ -385,6 +397,94 @@ export default function DoctorDashboard() {
                             )}
                         </div>
                     </div>
+                </div>
+
+                {/* Upcoming Appointments — 7 Days */}
+                <div className="mt-6 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-5 pb-4 border-b border-neutral-200 dark:border-neutral-700">
+                        <div className="flex items-center gap-2">
+                            <Calendar className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                            <h3 className="text-lg font-bold text-neutral-900 dark:text-white">My Upcoming Appointments</h3>
+                            <span className="px-2.5 py-0.5 text-xs font-black bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 rounded-full">
+                                {appointments.length} in next 7 days
+                            </span>
+                        </div>
+                        <button
+                            onClick={loadUpcomingAppointments}
+                            className="p-2 bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors text-neutral-600 dark:text-neutral-400 group"
+                        >
+                            <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
+                        </button>
+                    </div>
+
+                    {appointments.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 text-center">
+                            <div className="w-16 h-16 bg-neutral-100 dark:bg-neutral-900 rounded-2xl flex items-center justify-center mb-3 border border-neutral-200 dark:border-neutral-800">
+                                <Calendar className="w-8 h-8 text-neutral-300 dark:text-neutral-600" />
+                            </div>
+                            <p className="text-sm font-bold text-neutral-500 dark:text-neutral-400">No upcoming appointments in the next 7 days</p>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto custom-scrollbar">
+                            <table className="w-full text-left border-collapse text-sm">
+                                <thead>
+                                    <tr className="bg-neutral-100 dark:bg-neutral-800/50 text-neutral-500 dark:text-neutral-400 text-xs uppercase tracking-wider">
+                                        <th className="p-3 font-bold rounded-tl-xl">Date</th>
+                                        <th className="p-3 font-bold">Time</th>
+                                        <th className="p-3 font-bold">Patient</th>
+                                        <th className="p-3 font-bold hidden sm:table-cell">Phone</th>
+                                        <th className="p-3 font-bold hidden md:table-cell">Notes</th>
+                                        <th className="p-3 font-bold rounded-tr-xl">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700/50">
+                                    {appointments.map((appt: any) => {
+                                        const dt = new Date(appt.scheduledAt);
+                                        return (
+                                            <tr key={appt._id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/30 transition-colors">
+                                                <td className="p-3">
+                                                    <span className="font-bold text-neutral-700 dark:text-neutral-300">
+                                                        {dt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3">
+                                                    <span className="font-bold text-neutral-900 dark:text-white bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs">
+                                                        {dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3">
+                                                    <p className="font-bold text-neutral-900 dark:text-white">{appt.patientName}</p>
+                                                </td>
+                                                <td className="p-3 hidden sm:table-cell">
+                                                    <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400 text-xs font-medium">
+                                                        <Smartphone className="w-3 h-3" />
+                                                        {appt.phone || '—'}
+                                                    </div>
+                                                </td>
+                                                <td className="p-3 hidden md:table-cell">
+                                                    {appt.notes ? (
+                                                        <span className="px-2 py-0.5 bg-info-50 dark:bg-info-900/20 border border-info-200 dark:border-info-500/30 text-info-700 dark:text-info-400 rounded text-[10px] font-semibold">
+                                                            {appt.notes}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-neutral-400 text-xs">—</span>
+                                                    )}
+                                                </td>
+                                                <td className="p-3">
+                                                    <span className={`px-2.5 py-1 text-[10px] uppercase tracking-widest font-black rounded-md border ${appt.status === 'arrived'
+                                                            ? 'bg-success-50 border-success-200 text-success-700 dark:bg-success-500/20 dark:border-success-500/30 dark:text-success-400'
+                                                            : 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-500/20 dark:border-indigo-500/30 dark:text-indigo-400'
+                                                        }`}>
+                                                        {appt.status}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             </div>
 

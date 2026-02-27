@@ -21,7 +21,7 @@ export default function AdminLogin() {
         setLoading(true);
 
         try {
-            const res = await api.post("/admin/auth/login", formData);
+            const res = await api.post("/admin/login", formData);
             localStorage.setItem("adminId", res.data.admin.id);
             localStorage.setItem("adminName", res.data.admin.name);
             localStorage.setItem("hospitalId", res.data.admin.hospitalId);

@@ -176,7 +176,7 @@ router.get("/usage", async (req, res) => {
 
 router.get("/doctors", async (req, res) => {
     try {
-        const doctors = await User.find({ hospitalId: req.hospitalId, role: "DOCTOR" }).select('-password -refreshToken -resetPasswordToken');
+        const doctors = await Doctor.find({ hospitalId: req.hospitalId, role: "DOCTOR" }).select('-password -refreshToken -resetPasswordToken');
         res.json({ success: true, data: doctors });
     } catch (err) {
         res.status(500).json({ success: false, message: "Server Error" });
@@ -191,7 +191,7 @@ router.post("/doctors", async (req, res) => {
             return res.status(400).json({ message: "All fields are required" });
         }
 
-        const existing = await User.findOne({ email });
+        const existing = await Doctor.findOne({ email });
         if (existing) {
             return res.status(400).json({ message: "Email already exists" });
         }
@@ -201,7 +201,7 @@ router.post("/doctors", async (req, res) => {
         const Hospital = require("../models/Hospital");
         const hospital = await Hospital.findById(req.hospitalId);
 
-        const doctor = new User({
+        const doctor = new Doctor({
             hospitalId: req.hospitalId,
             branchId: hospital.branches[0]._id,
             role: "DOCTOR",
@@ -230,7 +230,7 @@ router.post("/doctors", async (req, res) => {
 
 router.delete("/doctors/:id", async (req, res) => {
     try {
-        await User.findOneAndDelete({ _id: req.params.id, hospitalId: req.hospitalId, role: "DOCTOR" });
+        await Doctor.findOneAndDelete({ _id: req.params.id, hospitalId: req.hospitalId, role: "DOCTOR" });
         res.json({ success: true, message: "Doctor removed from hospital" });
     } catch (err) {
         res.status(500).json({ success: false, message: "Server Error" });

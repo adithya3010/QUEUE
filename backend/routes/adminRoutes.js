@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
 const rateLimit = require("express-rate-limit");
 const User = require("../models/User");
 const Hospital = require("../models/Hospital");
@@ -31,6 +32,66 @@ const adminLimiter = process.env.NODE_ENV === 'test'
         legacyHeaders: false,
     });
 
+/**
+ * @swagger
+ * /admin/signup:
+ *   post:
+ *     summary: Register a new hospital admin
+ *     description: Creates a Hospital Admin account and provisions a new Hospital with a default "Main Branch". Step 1 of the admin onboarding flow.
+ *     tags: [Admin Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [hospitalName, name, email, password]
+ *             properties:
+ *               hospitalName:
+ *                 type: string
+ *                 example: City General Hospital
+ *               name:
+ *                 type: string
+ *                 example: John Admin
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: admin@citygeneral.com
+ *               password:
+ *                 type: string
+ *                 minLength: 8
+ *                 example: SecurePass123
+ *     responses:
+ *       200:
+ *         description: Admin registered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Admin signup successful
+ *                 admin:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     hospitalId:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *       400:
+ *         description: Validation error or email already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       429:
+ *         description: Too many requests
+ */
 router.post("/signup", adminLimiter, async (req, res) => {
     try {
         const validatedData = adminSignupSchema.parse(req.body);
@@ -83,6 +144,59 @@ router.post("/signup", adminLimiter, async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /admin/login:
+ *   post:
+ *     summary: Admin login
+ *     description: Authenticates a Hospital Admin. The response contains an `accessToken` — copy it and click **Authorize → AdminBearerAuth** in the Swagger UI to unlock protected endpoints.
+ *     tags: [Admin Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: admin@citygeneral.com
+ *               password:
+ *                 type: string
+ *                 example: SecurePass123
+ *     responses:
+ *       200:
+ *         description: Login successful — copy the accessToken from the response body and use it as a Bearer token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Admin login successful
+ *                 accessToken:
+ *                   type: string
+ *                   description: Copy this value → click Authorize (🔒) → paste under AdminBearerAuth
+ *                   example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+ *                 admin:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     hospitalId:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *       401:
+ *         description: Invalid credentials
+ *       429:
+ *         description: Too many requests
+ */
 router.post("/login", adminLimiter, async (req, res) => {
     try {
         const validatedData = adminLoginSchema.parse(req.body);
@@ -116,6 +230,7 @@ router.post("/login", adminLimiter, async (req, res) => {
 
         res.json({
             message: "Admin login successful",
+            accessToken,
             admin: {
                 id: admin._id,
                 hospitalId: admin.hospitalId,
@@ -135,6 +250,17 @@ router.post("/login", adminLimiter, async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /admin/logout:
+ *   post:
+ *     summary: Admin logout
+ *     description: Clears the adminToken cookie. Also works when called with a Bearer token.
+ *     tags: [Admin Auth]
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ */
 router.post("/logout", async (req, res) => {
     try {
         // Clear both adminToken and token cookies for flexibility
@@ -154,6 +280,21 @@ router.post("/logout", async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /admin/info:
+ *   get:
+ *     summary: Get admin profile
+ *     description: Returns the current admin's profile and hospitalId.
+ *     tags: [Admin Auth]
+ *     security:
+ *       - AdminBearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Admin profile
+ *       401:
+ *         description: Not authenticated
+ */
 router.get("/info", adminAuth, async (req, res) => {
     try {
         const admin = await User.findOne({ _id: req.adminId, role: "HOSPITAL_ADMIN" }).select('-password');
@@ -168,6 +309,71 @@ router.get("/info", adminAuth, async (req, res) => {
 // Staff Provisioning (Protected by adminAuth)
 // ----------------------------------------------------------------------
 
+/**
+ * @swagger
+ * /admin/staff/doctor:
+ *   post:
+ *     summary: Add a doctor to the hospital
+ *     description: Creates a DOCTOR account under the admin's hospital. Requires admin authentication — complete the login flow first and authorize with AdminBearerAuth.
+ *     tags: [Admin — Staff]
+ *     security:
+ *       - AdminBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, email, specialization, password]
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Dr. Sarah Chen
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: sarah@citygeneral.com
+ *               specialization:
+ *                 type: string
+ *                 example: Cardiology
+ *               password:
+ *                 type: string
+ *                 minLength: 8
+ *                 example: SecurePass123
+ *     responses:
+ *       200:
+ *         description: Doctor created — use the returned id as doctorId in B2B queue endpoints
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Doctor created successfully
+ *                 doctor:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       description: Use this as doctorId in B2B queue/appointment endpoints
+ *                     name:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     specialization:
+ *                       type: string
+ *       400:
+ *         description: Validation error or email already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Not authenticated
+ *       403:
+ *         description: Not an admin
+ */
 // Add a Doctor under the current Admin's Hospital
 router.post("/staff/doctor", adminAuth, async (req, res) => {
     try {
@@ -225,6 +431,48 @@ router.post("/staff/doctor", adminAuth, async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /admin/staff/receptionist:
+ *   post:
+ *     summary: Add a receptionist to the hospital
+ *     description: Creates a RECEPTIONIST account assigned to one or more doctors.
+ *     tags: [Admin — Staff]
+ *     security:
+ *       - AdminBearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, email, password]
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: Jane Receptionist
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: jane@citygeneral.com
+ *               password:
+ *                 type: string
+ *                 minLength: 8
+ *                 example: SecurePass123
+ *               assignedDoctors:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 description: Array of doctor ObjectIds from POST /admin/staff/doctor responses. Must be real IDs from your hospital — get them via GET /admin/staff.
+ *                 example: ["507f1f77bcf86cd799439011"]
+ *     responses:
+ *       200:
+ *         description: Receptionist created successfully
+ *       400:
+ *         description: Validation error
+ *       401:
+ *         description: Not authenticated
+ */
 // Add a Receptionist under the current Admin's Hospital
 router.post("/staff/receptionist", adminAuth, async (req, res) => {
     try {
@@ -244,8 +492,12 @@ router.post("/staff/receptionist", adminAuth, async (req, res) => {
         // Verify the assigned doctors actually belong to this hospital and are indeed DOCTORs
         const validDoctors = [];
         if (assignedDoctors && assignedDoctors.length > 0) {
+            const validIds = assignedDoctors.filter(id => mongoose.isValidObjectId(id));
+            if (validIds.length !== assignedDoctors.length) {
+                return res.status(400).json({ message: "One or more assignedDoctors IDs are not valid ObjectIds" });
+            }
             const doctors = await User.find({
-                _id: { $in: assignedDoctors },
+                _id: { $in: validIds },
                 hospitalId: admin.hospitalId,
                 role: "DOCTOR"
             });
@@ -318,6 +570,21 @@ router.put("/staff/:id/schedule", adminAuth, async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /admin/staff:
+ *   get:
+ *     summary: List all staff
+ *     description: Returns all doctors and receptionists under the admin's hospital.
+ *     tags: [Admin — Staff]
+ *     security:
+ *       - AdminBearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Array of staff members
+ *       401:
+ *         description: Not authenticated
+ */
 // Get all staff for the admin's hospital
 router.get("/staff", adminAuth, async (req, res) => {
     try {
