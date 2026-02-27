@@ -45,7 +45,7 @@ app.use(sentry.tracingHandler());
 // CORS Configuration (must come before other middleware)
 const corsOrigin = process.env.NODE_ENV === 'production'
   ? process.env.FRONTEND_URL
-  : 'http://localhost:3000';
+  : 'https://queue-muta.vercel.app';
 
 app.use(cors({
   origin: corsOrigin,
