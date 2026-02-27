@@ -78,7 +78,7 @@ const emitSocketEvent = (agentId, event, data, organizationId = null, serviceId 
 router.post("/add", auth, async (req, res) => {
     try {
         const validatedData = addQueueEntrySchema.parse(req.body);
-        const { clientName, clientPhone, notes, externalClientId } = validatedData;
+        const { clientName, clientPhone, clientEmail, notes, externalClientId } = validatedData;
 
         let agentId   = req.user?.id;
         let serviceId = validatedData.serviceId || null;
@@ -105,7 +105,7 @@ router.post("/add", auth, async (req, res) => {
         }
 
         // Resolve agent + serviceId
-        const agent = await User.findOne({ _id: agentId, role: "AGENT" });
+        const agent = await User.findOne({ _id: agentId, role: { $in: ["AGENT", "DOCTOR"] } });
         if (!agent) return res.status(404).json({ message: "Agent not found" });
         if (!agent.organizationId) return res.status(500).json({ message: "Agent is not associated with an organization" });
 
@@ -121,6 +121,7 @@ router.post("/add", auth, async (req, res) => {
             agentId,
             clientName,
             clientPhone,
+            clientEmail,
             notes:           notes || "",
             externalClientId,
             tokenNumber:     count + 1,
@@ -134,7 +135,7 @@ router.post("/add", auth, async (req, res) => {
         const trackingUrl = process.env.FRONTEND_URL
             ? `${process.env.FRONTEND_URL}/status/${entry.uniqueLinkId}`
             : `http://localhost:3000/status/${entry.uniqueLinkId}`;
-        sendQueueConfirmation(clientPhone, clientName, entry.tokenNumber, trackingUrl, agent.name);
+        sendQueueConfirmation(clientEmail, clientName, entry.tokenNumber, trackingUrl, agent.name);
 
         res.json({ message: "Client added to queue successfully", patient: entry, statusLink: `/api/queue/status/${entry.uniqueLinkId}` });
     } catch (err) {
@@ -176,11 +177,11 @@ router.get("/history/", auth, async (req, res) => {
             }
         } else if (req.user.role === "ORG_ADMIN") {
             if (queryAgentId) {
-                const agent = await User.findOne({ _id: queryAgentId, organizationId: req.user.organizationId, role: "AGENT" });
+                const agent = await User.findOne({ _id: queryAgentId, organizationId: req.user.organizationId, role: { $in: ["AGENT", "DOCTOR"] } });
                 if (!agent) return res.status(403).json({ message: "Agent not found in your organization" });
                 targetAgentId = queryAgentId;
             } else {
-                const agents = await User.find({ organizationId: req.user.organizationId, role: "AGENT" }).select('_id');
+                const agents = await User.find({ organizationId: req.user.organizationId, role: { $in: ["AGENT", "DOCTOR"] } }).select('_id');
                 if (agents.length === 0) return res.json([]);
                 targetAgentId = { $in: agents.map(a => a._id) };
             }
@@ -389,7 +390,7 @@ router.put("/complete/:id", auth, async (req, res) => {
         if (nextWaiting.length >= 2) {
             const p2    = nextWaiting[1];
             const agent = await User.findById(entry.agentId);
-            sendNearlyUpAlert(p2.clientPhone, p2.clientName, agent.name);
+            sendNearlyUpAlert(p2.clientEmail, p2.clientName, agent.name);
         }
 
         res.json(entry);
@@ -418,7 +419,7 @@ router.put("/cancel/:id", auth, async (req, res) => {
         if (nextWaiting.length >= 2) {
             const p2    = nextWaiting[1];
             const agent = await User.findById(entry.agentId);
-            sendNearlyUpAlert(p2.clientPhone, p2.clientName, agent.name);
+            sendNearlyUpAlert(p2.clientEmail, p2.clientName, agent.name);
         }
 
         res.json(entry);

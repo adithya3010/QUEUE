@@ -130,6 +130,13 @@ router.post("/signup", orgLimiter, async (req, res) => {
             }]
         });
 
+        // Salon is walk-in only: disable appointments by default
+        if (org.industry === "salon") {
+            org.settings = org.settings || {};
+            org.settings.allowAppointments = false;
+            await org.save();
+        }
+
         // Provision initial services (optional); if not provided, create a generic default
         const seedServices = Array.isArray(services) && services.length
             ? services
@@ -547,6 +554,37 @@ router.get("/staff", orgAuth, async (req, res) => {
             .select("-password -refreshToken -resetPasswordToken");
         res.json(staff);
     } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// DELETE /org/staff/:id — remove an agent/operator from the organization
+router.delete("/staff/:id", orgAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!mongoose.isValidObjectId(id)) {
+            return res.status(400).json({ message: "Invalid staff id" });
+        }
+
+        const staff = await User.findOne({
+            _id:            id,
+            organizationId: req.organizationId,
+            role:           { $in: ["AGENT", "OPERATOR"] }
+        });
+        if (!staff) return res.status(404).json({ message: "Staff member not found" });
+
+        // Clean up operator assignments if removing an agent
+        if (staff.role === "AGENT") {
+            await User.updateMany(
+                { organizationId: req.organizationId, role: "OPERATOR" },
+                { $pull: { assignedAgents: staff._id } }
+            );
+        }
+
+        await User.deleteOne({ _id: staff._id });
+        res.json({ success: true, message: "Staff member removed" });
+    } catch (err) {
+        logger.error("Delete Staff Error", { error: err.message });
         res.status(500).json({ message: "Server error" });
     }
 });

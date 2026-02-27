@@ -171,6 +171,15 @@ export default function AdminDashboard() {
 
     if (!admin) return <Loader />;
 
+    const orgRefRaw = admin.organizationId || admin.hospitalId;
+    const orgRef = (() => {
+        if (!orgRefRaw) return "";
+        if (typeof orgRefRaw === "string") return orgRefRaw;
+        if (typeof orgRefRaw === "object") return orgRefRaw.slug || orgRefRaw._id || orgRefRaw.id || "";
+        return String(orgRefRaw);
+    })();
+    const encodedOrgRef = encodeURIComponent(orgRef);
+
     return (
         <div className="w-full min-h-screen bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white transition-colors duration-300 relative overflow-x-hidden">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
@@ -240,7 +249,7 @@ export default function AdminDashboard() {
                         <div className="bg-white p-4 rounded-2xl shadow-sm border border-neutral-100 mb-4 inline-block">
                             <QRCodeCanvas
                                 id="kiosk-qr-code"
-                                value={typeof window !== "undefined" ? `${window.location.origin}/kiosk/${admin.organizationId || admin.hospitalId}` : ""}
+                                value={typeof window !== "undefined" && encodedOrgRef ? `${window.location.origin}/kiosk/${encodedOrgRef}` : ""}
                                 size={180}
                                 level={"H"}
                                 fgColor={"#0f172a"}
@@ -256,7 +265,7 @@ export default function AdminDashboard() {
                             Download QR Code
                         </button>
                         <button
-                            onClick={() => window.open(`/kiosk/${admin.organizationId || admin.hospitalId}/display`, '_blank')}
+                            onClick={() => encodedOrgRef && window.open(`/kiosk/${encodedOrgRef}/display`, "_blank")}
                             className="w-full mt-3 py-2.5 rounded-xl font-bold bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 transition-colors flex items-center justify-center gap-2 text-sm border border-indigo-200 dark:border-indigo-500/30"
                         >
                             <Monitor className="w-4 h-4" /> Open TV Display

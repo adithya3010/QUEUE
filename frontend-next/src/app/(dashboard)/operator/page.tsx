@@ -34,11 +34,13 @@ function SortableRow({ id, children }: { id: string; children: (listeners: any, 
 
 export default function OperatorDashboard() {
     const [operator, setOperator] = useState<any>(null);
+    const [organization, setOrganization] = useState<any>(null);
+    const [appointmentsEnabled, setAppointmentsEnabled] = useState<boolean | null>(null);
     const [queue, setQueue] = useState<any[]>([]);
     const [appointments, setAppointments] = useState<any[]>([]);
     const [msg, setMsg] = useState("");
-    const [form, setForm] = useState({ name: "", phone: "", age: "", notes: "", priority: "NORMAL", agentId: "" });
-    const [appointmentForm, setAppointmentForm] = useState({ name: "", phone: "", scheduledAt: "", notes: "", agentId: "" });
+    const [form, setForm] = useState({ name: "", email: "", phone: "", age: "", notes: "", priority: "NORMAL", agentId: "" });
+    const [appointmentForm, setAppointmentForm] = useState({ name: "", email: "", phone: "", scheduledAt: "", notes: "", agentId: "" });
     const [activeTab, setActiveTab] = useState<'walkin' | 'appointment'>('walkin');
     const [stats, setStats] = useState({ total: 0, waiting: 0, priority: 0, avgWaitTime: 0 });
     const router = useRouter();
@@ -73,6 +75,25 @@ export default function OperatorDashboard() {
         };
     }, [operator]);
 
+    useEffect(() => {
+        if (!operator) return;
+        api.get("/auth/org").then((res) => {
+            const org = res.data?.organization;
+            setOrganization(org);
+            const enabled = org ? (org.industry !== "salon" && org.settings?.allowAppointments !== false) : true;
+            setAppointmentsEnabled(enabled);
+        }).catch(() => {
+            // Non-fatal: if we can't load org info, default to enabling appointments
+            setAppointmentsEnabled(true);
+        });
+    }, [operator]);
+
+    useEffect(() => {
+        if (appointmentsEnabled === false && activeTab === "appointment") {
+            setActiveTab("walkin");
+        }
+    }, [appointmentsEnabled, activeTab]);
+
     async function loadOperator() {
         try {
             const meRes = await api.get("/auth/me");
@@ -103,12 +124,16 @@ export default function OperatorDashboard() {
     useEffect(() => {
         if (operator) {
             loadQueue();
-            loadAppointments();
+            if (appointmentsEnabled) loadAppointments();
         }
-    }, [operator]);
+    }, [operator, appointmentsEnabled]);
 
     async function loadAppointments() {
         try {
+            if (!appointmentsEnabled) {
+                setAppointments([]);
+                return;
+            }
             let allApps: any[] = [];
             const assignedAgents = operator.assignedAgents || operator.assignedDoctors || [];
             for (let agent of assignedAgents) {
@@ -117,7 +142,13 @@ export default function OperatorDashboard() {
             }
             allApps.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
             setAppointments(allApps);
-        } catch (err) {
+        } catch (err: any) {
+            if (err?.response?.status === 403) {
+                setAppointmentsEnabled(false);
+                setActiveTab("walkin");
+                setAppointments([]);
+                return;
+            }
             console.error(err);
         }
     }
@@ -166,13 +197,15 @@ export default function OperatorDashboard() {
                 clientName: form.name,
                 name: form.name,                // legacy compat
                 number: form.phone,
+                clientEmail: form.email,
+                email: form.email,              // legacy compat
                 description: form.priority,
                 notes: form.notes,
                 agentId: form.agentId,
                 doctorId: form.agentId,         // legacy compat
             });
             showMsg("Client added to queue!", "success");
-            setForm({ name: "", phone: "", age: "", notes: "", priority: "NORMAL", agentId: form.agentId });
+            setForm({ name: "", email: "", phone: "", age: "", notes: "", priority: "NORMAL", agentId: form.agentId });
             loadQueue();
         } catch (err: any) {
             showMsg(err.response?.data?.message || "Error adding client", "error");
@@ -181,6 +214,10 @@ export default function OperatorDashboard() {
 
     async function bookAppointment(e: any) {
         e.preventDefault();
+        if (!appointmentsEnabled) {
+            showMsg("Appointments are disabled for your organization", "error");
+            return;
+        }
         if (!appointmentForm.agentId || !appointmentForm.scheduledAt) {
             showMsg("Please fill all required fields", "error");
             return;
@@ -192,13 +229,15 @@ export default function OperatorDashboard() {
                 patientName: appointmentForm.name,       // legacy compat
                 clientPhone: appointmentForm.phone,
                 phone: appointmentForm.phone,            // legacy compat
+                clientEmail: appointmentForm.email,
+                email: appointmentForm.email,            // legacy compat
                 scheduledAt: appointmentForm.scheduledAt,
                 notes: appointmentForm.notes,
                 agentId: appointmentForm.agentId,
                 doctorId: appointmentForm.agentId,       // legacy compat
             });
             showMsg("Appointment booked successfully!", "success");
-            setAppointmentForm({ name: "", phone: "", scheduledAt: "", notes: "", agentId: appointmentForm.agentId });
+            setAppointmentForm({ name: "", email: "", phone: "", scheduledAt: "", notes: "", agentId: appointmentForm.agentId });
             loadAppointments();
         } catch (err: any) {
             showMsg(err.response?.data?.message || "Error booking appointment", "error");
@@ -217,6 +256,10 @@ export default function OperatorDashboard() {
 
     async function markArrived(appointmentId: string) {
         try {
+            if (!appointmentsEnabled) {
+                showMsg("Appointments are disabled for your organization", "error");
+                return;
+            }
             const res = await api.put(`/appointments/${appointmentId}/arrive`);
             const appt = res.data.appointment;
 
@@ -225,6 +268,8 @@ export default function OperatorDashboard() {
                 clientName: appt.clientName || appt.patientName,
                 name: appt.clientName || appt.patientName,
                 number: appt.clientPhone || appt.phone,
+                clientEmail: appt.clientEmail || appt.email,
+                email: appt.clientEmail || appt.email,
                 description: 'NORMAL',
                 notes: `[Appt] ${appt.notes || ''}`,
                 agentId: appt.agentId || appt.doctorId,
@@ -332,6 +377,7 @@ export default function OperatorDashboard() {
     if (!operator) return <Loader />;
 
     const assignedAgents = operator.assignedAgents || operator.assignedDoctors || [];
+    const showAppointmentsTab = appointmentsEnabled === true;
 
     return (
         <div className="w-full min-h-screen bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white transition-colors duration-300 relative overflow-x-hidden">
@@ -398,12 +444,14 @@ export default function OperatorDashboard() {
                     >
                         Walk-in Queue
                     </button>
-                    <button
-                        onClick={() => setActiveTab('appointment')}
-                        className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'appointment' ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'}`}
-                    >
-                        <Calendar className="w-4 h-4" /> Appointments (7 Days)
-                    </button>
+                    {showAppointmentsTab && (
+                        <button
+                            onClick={() => setActiveTab('appointment')}
+                            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'appointment' ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'}`}
+                        >
+                            <Calendar className="w-4 h-4" /> Appointments (7 Days)
+                        </button>
+                    )}
                 </div>
 
                 {/* Forms Column */}
@@ -423,6 +471,16 @@ export default function OperatorDashboard() {
                                         onChange={(e) => setForm({ ...form, name: e.target.value })}
                                         className="w-full px-4 py-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-2 focus:ring-brand-500/50 outline-none transition-all text-sm"
                                         required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-neutral-500 dark:text-neutral-400 mb-1.5 pl-1 block">Email <span className="text-neutral-400">(for confirmation)</span></label>
+                                    <input
+                                        type="email"
+                                        placeholder="name@example.com"
+                                        value={form.email}
+                                        onChange={(e) => setForm({ ...form, email: e.target.value })}
+                                        className="w-full px-4 py-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-2 focus:ring-brand-500/50 outline-none transition-all text-sm"
                                     />
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
@@ -517,6 +575,16 @@ export default function OperatorDashboard() {
                                         onChange={(e) => setAppointmentForm({ ...appointmentForm, name: e.target.value })}
                                         className="w-full px-4 py-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-2 focus:ring-brand-500/50 outline-none transition-all text-sm"
                                         required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-neutral-500 dark:text-neutral-400 mb-1.5 pl-1 block">Email <span className="text-neutral-400">(for reminder)</span></label>
+                                    <input
+                                        type="email"
+                                        placeholder="name@example.com"
+                                        value={appointmentForm.email}
+                                        onChange={(e) => setAppointmentForm({ ...appointmentForm, email: e.target.value })}
+                                        className="w-full px-4 py-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-2 focus:ring-brand-500/50 outline-none transition-all text-sm"
                                     />
                                 </div>
                                 <div>

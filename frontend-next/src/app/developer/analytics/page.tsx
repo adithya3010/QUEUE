@@ -11,10 +11,21 @@ export default function AnalyticsDashboard() {
     useEffect(() => {
         const fetchAnalytics = async () => {
             try {
-                const res = await api.get("/hospitals/analytics");
-                if (res.data.success) {
-                    setStats(res.data.data);
-                }
+                const res = await api.get("/org/analytics");
+
+                const dailyVolume = Array.isArray(res.data?.dailyVolume) ? res.data.dailyVolume : [];
+                const agentPerformance = Array.isArray(res.data?.agentPerformance) ? res.data.agentPerformance : [];
+
+                const totalVisits = dailyVolume.reduce((sum: number, v: any) => sum + (Number(v?.count) || 0), 0);
+                const completed = agentPerformance.reduce((sum: number, a: any) => sum + (Number(a?.completed) || 0), 0);
+                const cancelled = agentPerformance.reduce((sum: number, a: any) => sum + (Number(a?.cancelled) || 0), 0);
+                const dropOffRate = totalVisits > 0 ? Math.round((cancelled / totalVisits) * 100) : 0;
+
+                const volumeByDoctor = agentPerformance
+                    .map((a: any) => ({ doctorName: a?.agentName || "(Unknown)", patientCount: Number(a?.total) || 0 }))
+                    .sort((a: any, b: any) => b.patientCount - a.patientCount);
+
+                setStats({ totalVisits, completed, dropOffRate, volumeByDoctor });
             } catch (err) {
                 console.error("Failed to load analytics", err);
             } finally {

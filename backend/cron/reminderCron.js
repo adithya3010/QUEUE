@@ -24,9 +24,9 @@ const initReminderCron = () => {
             if (appointments.length > 0) {
                 logger.info(`Found ${appointments.length} appointments for tomorrow.`);
                 for (const appt of appointments) {
-                    if (appt.clientPhone && appt.agentId) {
+                    if (appt.clientEmail && appt.agentId) {
                         await sendReturnVisitReminder(
-                            appt.clientPhone,
+                            appt.clientEmail,
                             appt.clientName,
                             appt.agentId.name,
                             appt.scheduledAt

@@ -21,7 +21,7 @@ const createTransporter = () => {
     // Custom SMTP configuration
     const config = {
       host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_PORT || 587,
+      port: Number(process.env.EMAIL_PORT || 587),
       secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for other ports
       auth: {
         user: process.env.EMAIL_USER,
@@ -29,7 +29,7 @@ const createTransporter = () => {
       },
     };
 
-    return nodemailer.createTransporter(config);
+    return nodemailer.createTransport(config);
   } catch (error) {
     logger.error('Failed to create email transporter', { error: error.message });
     return null;
@@ -37,6 +37,85 @@ const createTransporter = () => {
 };
 
 const transporter = createTransporter();
+
+const sendEmail = async ({ to, subject, html, text }) => {
+  const from = process.env.EMAIL_FROM || process.env.EMAIL_USER;
+
+  if (!to) return false;
+
+  // If no transporter (dev mode without config), log to console
+  if (!transporter) {
+    logger.info('Email (not sent - no email config):', { to, subject });
+    console.log('\n=====================================');
+    console.log('EMAIL (Development Mode)');
+    console.log('=====================================');
+    console.log(`To: ${to}`);
+    console.log(`Subject: ${subject}`);
+    if (text) console.log(text);
+    console.log('=====================================\n');
+    return true;
+  }
+
+  try {
+    const info = await transporter.sendMail({ from, to, subject, html, text });
+    logger.info('Email sent successfully', { to, subject, messageId: info.messageId });
+    return true;
+  } catch (error) {
+    logger.error('Failed to send email', { error: error.message, to, subject });
+    return false;
+  }
+};
+
+const sendQueueConfirmationEmail = async (email, name, position, trackingUrl, agentOrServiceName) => {
+  const safeName = name || 'there';
+  const subject = 'Queue Confirmation - Smart Queue';
+  const text = `Hi ${safeName},\n\nYou are #${position} in ${agentOrServiceName}'s queue.\nTrack live: ${trackingUrl}\n\n- Smart Queue`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
+      <h2 style="margin: 0 0 12px;">Queue Confirmation</h2>
+      <p>Hi ${safeName},</p>
+      <p>You are <strong>#${position}</strong> in <strong>${agentOrServiceName}</strong>'s queue.</p>
+      <p>Track live: <a href="${trackingUrl}">${trackingUrl}</a></p>
+      <p style="margin-top: 18px; color: #666;">— Smart Queue</p>
+    </div>
+  `;
+  return sendEmail({ to: email, subject, html, text });
+};
+
+const sendNearlyUpAlertEmail = async (email, name, agentName) => {
+  const safeName = name || 'there';
+  const subject = 'You’re Nearly Up - Smart Queue';
+  const text = `Hi ${safeName},\n\nYou are almost up to see ${agentName}. Please proceed to the clinic in the next 5–10 minutes.\n\n- Smart Queue`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
+      <h2 style="margin: 0 0 12px;">You’re Nearly Up</h2>
+      <p>Hi ${safeName},</p>
+      <p>You are almost up to see <strong>${agentName}</strong>. Please proceed in the next <strong>5–10 minutes</strong>.</p>
+      <p style="margin-top: 18px; color: #666;">— Smart Queue</p>
+    </div>
+  `;
+  return sendEmail({ to: email, subject, html, text });
+};
+
+const sendReturnVisitReminderEmail = async (email, name, agentName, date) => {
+  const safeName = name || 'there';
+  const d = date instanceof Date ? date : new Date(date);
+  const formattedDate = isNaN(d.getTime())
+    ? ''
+    : d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+
+  const subject = 'Appointment Reminder - Smart Queue';
+  const text = `Hi ${safeName},\n\nThis is a reminder about your upcoming visit with ${agentName} scheduled for tomorrow${formattedDate ? ` (${formattedDate})` : ''}.\n\n- Smart Queue`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
+      <h2 style="margin: 0 0 12px;">Appointment Reminder</h2>
+      <p>Hi ${safeName},</p>
+      <p>This is a reminder about your upcoming visit with <strong>${agentName}</strong> scheduled for tomorrow${formattedDate ? ` (<strong>${formattedDate}</strong>)` : ''}.</p>
+      <p style="margin-top: 18px; color: #666;">— Smart Queue</p>
+    </div>
+  `;
+  return sendEmail({ to: email, subject, html, text });
+};
 
 /**
  * Send password reset email
@@ -318,6 +397,10 @@ The Smart Queue Team
 };
 
 module.exports = {
+  sendEmail,
   sendPasswordResetEmail,
   sendPasswordChangeConfirmation,
+  sendQueueConfirmationEmail,
+  sendNearlyUpAlertEmail,
+  sendReturnVisitReminderEmail,
 };

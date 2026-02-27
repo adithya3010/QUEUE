@@ -27,6 +27,9 @@ const appointmentSchema = new mongoose.Schema({
     clientPhone: {
         type: String        // was: phone
     },
+    clientEmail: {
+        type: String
+    },
     scheduledAt: {
         type: Date,
         required: true

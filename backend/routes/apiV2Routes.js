@@ -47,6 +47,19 @@ async function resolveService(serviceId, organizationId) {
     return Service.findOne({ _id: serviceId, organizationId, isActive: true });
 }
 
+async function assertAppointmentsEnabledForOrgId(orgId) {
+    const org = await Organization.findById(orgId).select("industry settings.allowAppointments");
+    if (!org) return { ok: false, status: 404, message: "Organization not found" };
+
+    const allowAppointments = org.settings?.allowAppointments !== false;
+    const isSalon = org.industry === "salon";
+    if (!allowAppointments || isSalon) {
+        return { ok: false, status: 403, message: "Appointments are disabled for this organization" };
+    }
+
+    return { ok: true };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DISCOVERY
 // ─────────────────────────────────────────────────────────────────────────────
@@ -187,6 +200,9 @@ router.get("/services", async (req, res) => {
  */
 router.get("/services/:serviceId/slots", async (req, res) => {
     try {
+        const policy = await assertAppointmentsEnabledForOrgId(req.organizationId);
+        if (!policy.ok) return res.status(policy.status).json({ success: false, message: policy.message });
+
         const service = await resolveService(req.params.serviceId, req.organizationId);
         if (!service) return res.status(404).json({ success: false, message: "Service not found" });
 
@@ -791,6 +807,9 @@ router.delete("/queue/:uniqueLinkId", async (req, res) => {
  */
 router.get("/appointments", async (req, res) => {
     try {
+        const policy = await assertAppointmentsEnabledForOrgId(req.organizationId);
+        if (!policy.ok) return res.status(policy.status).json({ success: false, message: policy.message });
+
         const { serviceId, agentId, status, date, limit = 100 } = req.query;
         const filter = { organizationId: req.organizationId };
         if (serviceId) filter.serviceId = serviceId;
@@ -852,6 +871,9 @@ router.get("/appointments", async (req, res) => {
  */
 router.post("/appointments/book", async (req, res) => {
     try {
+        const policy = await assertAppointmentsEnabledForOrgId(req.organizationId);
+        if (!policy.ok) return res.status(policy.status).json({ success: false, message: policy.message });
+
         const { serviceId, agentId, clientName, clientPhone, scheduledAt, notes } = req.body;
 
         if (!serviceId)   return res.status(400).json({ success: false, message: "serviceId is required" });
@@ -904,6 +926,9 @@ router.post("/appointments/book", async (req, res) => {
  */
 router.put("/appointments/:id/arrive", async (req, res) => {
     try {
+        const policy = await assertAppointmentsEnabledForOrgId(req.organizationId);
+        if (!policy.ok) return res.status(policy.status).json({ success: false, message: policy.message });
+
         const appt = await Appointment.findOne({ _id: req.params.id, organizationId: req.organizationId });
         if (!appt) return res.status(404).json({ success: false, message: "Appointment not found" });
         if (appt.status !== "scheduled") {
@@ -963,6 +988,9 @@ router.put("/appointments/:id/arrive", async (req, res) => {
  */
 router.put("/appointments/:id/cancel", async (req, res) => {
     try {
+        const policy = await assertAppointmentsEnabledForOrgId(req.organizationId);
+        if (!policy.ok) return res.status(policy.status).json({ success: false, message: policy.message });
+
         const appt = await Appointment.findOne({ _id: req.params.id, organizationId: req.organizationId });
         if (!appt) return res.status(404).json({ success: false, message: "Appointment not found" });
         if (appt.status === "completed") {

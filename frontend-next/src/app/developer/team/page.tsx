@@ -12,10 +12,9 @@ export default function TeamManagement() {
 
     const loadDoctors = async () => {
         try {
-            const res = await api.get("/hospitals/doctors");
-            if (res.data.success) {
-                setDoctors(res.data.data);
-            }
+            const res = await api.get("/org/staff");
+            const staff = Array.isArray(res.data) ? res.data : [];
+            setDoctors(staff.filter((s: any) => s?.role === "AGENT"));
         } catch (err) {
             console.error(err);
         }
@@ -36,8 +35,13 @@ export default function TeamManagement() {
         e.preventDefault();
         setLoading(true);
         try {
-            await api.post("/hospitals/doctors", formData);
-            showMsg("Doctor provisioned successfully");
+            await api.post("/org/staff/agent", {
+                name: formData.name,
+                email: formData.email,
+                serviceCategory: formData.specialization,
+                password: formData.password,
+            });
+            showMsg("Agent provisioned successfully");
             setFormData({ name: "", email: "", specialization: "", password: "" });
             loadDoctors();
         } catch (err: any) {
@@ -50,7 +54,7 @@ export default function TeamManagement() {
     const removeDoctor = async (id: string) => {
         if (!window.confirm("Are you sure you want to remove this doctor? This cannot be undone.")) return;
         try {
-            await api.delete(`/hospitals/doctors/${id}`);
+            await api.delete(`/org/staff/${id}`);
             showMsg("Doctor removed successfully");
             loadDoctors();
         } catch (err) {

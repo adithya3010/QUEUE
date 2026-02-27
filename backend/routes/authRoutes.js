@@ -145,6 +145,13 @@ router.post("/signup", authLimiter, async (req, res) => {
             }]
         });
 
+        // Salon is walk-in only: disable appointments by default
+        if (org.industry === "salon") {
+            org.settings = org.settings || {};
+            org.settings.allowAppointments = false;
+            await org.save();
+        }
+
         const seedServices = Array.isArray(services) && services.length
             ? services
             : [{ name: "Default Service", category: "General" }];
@@ -317,6 +324,21 @@ router.get("/me", auth, async (req, res) => {
         });
     } catch (err) {
         logger.error("Get Me Error", { error: err.message });
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /auth/org — current user's organization info
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/org", auth, async (req, res) => {
+    try {
+        const org = await Organization.findById(req.user.organizationId)
+            .select("name slug industry settings locations");
+        if (!org) return res.status(404).json({ message: "Organization not found" });
+        res.json({ success: true, organization: org });
+    } catch (err) {
+        logger.error("Get Org Error", { error: err.message });
         res.status(500).json({ message: "Server error" });
     }
 });
@@ -570,6 +592,13 @@ router.post("/google/complete", async (req, res) => {
                 timezone: primaryLocation?.timezone || "Asia/Kolkata"
             }]
         });
+
+        // Salon is walk-in only: disable appointments by default
+        if (org.industry === "salon") {
+            org.settings = org.settings || {};
+            org.settings.allowAppointments = false;
+            await org.save();
+        }
 
         const seedServices = Array.isArray(services) && services.length
             ? services

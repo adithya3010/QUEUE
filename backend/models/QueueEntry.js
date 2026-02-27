@@ -28,6 +28,7 @@ const queueEntrySchema = new mongoose.Schema({
     externalClientId: { type: String, index: true },   // zero-PII external ref
     clientName:       { type: String },                // optional for zero-PII flows
     clientPhone:      { type: String },                // for SMS/WhatsApp notifications
+    clientEmail:      { type: String },                // for email notifications
 
     // Where the entry came from (useful across industries)
     source: {

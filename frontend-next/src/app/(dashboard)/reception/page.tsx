@@ -34,11 +34,12 @@ function SortableRow({ id, children }: { id: string; children: (listeners: any, 
 
 export default function ReceptionDashboard() {
     const [receptionist, setReceptionist] = useState<any>(null);
+    const [organization, setOrganization] = useState<any>(null);
     const [queue, setQueue] = useState<any[]>([]);
     const [appointments, setAppointments] = useState<any[]>([]);
     const [msg, setMsg] = useState("");
-    const [form, setForm] = useState({ name: "", phone: "", age: "", notes: "", priority: "NORMAL", doctorId: "" });
-    const [appointmentForm, setAppointmentForm] = useState({ name: "", phone: "", scheduledAt: "", notes: "", doctorId: "" });
+    const [form, setForm] = useState({ name: "", email: "", phone: "", age: "", notes: "", priority: "NORMAL", doctorId: "" });
+    const [appointmentForm, setAppointmentForm] = useState({ name: "", email: "", phone: "", scheduledAt: "", notes: "", doctorId: "" });
     const [activeTab, setActiveTab] = useState<'walkin' | 'appointment'>('walkin');
     const [stats, setStats] = useState({ total: 0, waiting: 0, priority: 0, avgWaitTime: 0 });
     const router = useRouter();
@@ -51,6 +52,23 @@ export default function ReceptionDashboard() {
     useEffect(() => {
         loadReceptionist();
     }, []);
+
+    useEffect(() => {
+        if (!receptionist) return;
+        api.get("/auth/org").then((res) => {
+            setOrganization(res.data?.organization);
+        }).catch(() => {
+            // Non-fatal: fall back to showing appointment UI
+        });
+    }, [receptionist]);
+
+    const appointmentsEnabled = organization
+        ? (organization.industry !== "salon" && organization.settings?.allowAppointments !== false)
+        : true;
+
+    useEffect(() => {
+        if (!appointmentsEnabled && activeTab === "appointment") setActiveTab("walkin");
+    }, [appointmentsEnabled, activeTab]);
 
     useEffect(() => {
         if (!receptionist) return;
@@ -100,15 +118,15 @@ export default function ReceptionDashboard() {
     useEffect(() => {
         if (receptionist) {
             loadQueue();
-            loadAppointments();
+            if (appointmentsEnabled) loadAppointments();
         }
-    }, [receptionist]);
+    }, [receptionist, appointmentsEnabled]);
 
     async function loadAppointments() {
         try {
             let allApps: any[] = [];
             for (let doc of receptionist.assignedDoctors || []) {
-                const res = await api.get(`/appointments/doctor/${doc._id}/upcoming`);
+                const res = await api.get(`/appointments/agent/${doc._id}/upcoming`);
                 allApps = [...allApps, ...res.data];
             }
             allApps.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
@@ -163,12 +181,14 @@ export default function ReceptionDashboard() {
             await api.post("/queue/add", {
                 name: form.name,
                 number: form.phone,
+                clientEmail: form.email,
+                email: form.email,
                 description: form.priority,
                 notes: form.notes,
                 doctorId: form.doctorId,
             });
             showMsg("Patient added to queue!", "success");
-            setForm({ name: "", phone: "", age: "", notes: "", priority: "NORMAL", doctorId: form.doctorId });
+            setForm({ name: "", email: "", phone: "", age: "", notes: "", priority: "NORMAL", doctorId: form.doctorId });
             loadQueue();
         } catch (err: any) {
             showMsg(err.response?.data?.message || "Error adding patient", "error");
@@ -184,14 +204,16 @@ export default function ReceptionDashboard() {
 
         try {
             await api.post("/appointments/book", {
-                patientName: appointmentForm.name,
-                phone: appointmentForm.phone,
+                clientName: appointmentForm.name,
+                clientPhone: appointmentForm.phone,
+                clientEmail: appointmentForm.email,
+                email: appointmentForm.email,
                 scheduledAt: appointmentForm.scheduledAt,
                 notes: appointmentForm.notes,
-                doctorId: appointmentForm.doctorId,
+                agentId: appointmentForm.doctorId,
             });
             showMsg("Appointment booked successfully!", "success");
-            setAppointmentForm({ name: "", phone: "", scheduledAt: "", notes: "", doctorId: appointmentForm.doctorId });
+            setAppointmentForm({ name: "", email: "", phone: "", scheduledAt: "", notes: "", doctorId: appointmentForm.doctorId });
             loadAppointments();
         } catch (err: any) {
             showMsg(err.response?.data?.message || "Error booking appointment", "error");
@@ -217,6 +239,8 @@ export default function ReceptionDashboard() {
             await api.post("/queue/add", {
                 name: appt.patientName,
                 number: appt.phone,
+                clientEmail: appt.clientEmail || appt.email,
+                email: appt.clientEmail || appt.email,
                 description: 'NORMAL',
                 notes: `[Appt] ${appt.notes || ''}`,
                 doctorId: appt.doctorId,
@@ -393,12 +417,14 @@ export default function ReceptionDashboard() {
                     >
                         Walk-in Queue
                     </button>
-                    <button
-                        onClick={() => setActiveTab('appointment')}
-                        className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'appointment' ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'}`}
-                    >
-                        <Calendar className="w-4 h-4" /> Appointments (7 Days)
-                    </button>
+                    {appointmentsEnabled && (
+                        <button
+                            onClick={() => setActiveTab('appointment')}
+                            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'appointment' ? 'bg-white dark:bg-neutral-700 text-neutral-900 dark:text-white shadow-sm' : 'text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'}`}
+                        >
+                            <Calendar className="w-4 h-4" /> Appointments (7 Days)
+                        </button>
+                    )}
                 </div>
 
                 {/* Forms Column */}
@@ -418,6 +444,16 @@ export default function ReceptionDashboard() {
                                         onChange={(e) => setForm({ ...form, name: e.target.value })}
                                         className="w-full px-4 py-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-2 focus:ring-brand-500/50 outline-none transition-all text-sm"
                                         required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-neutral-500 dark:text-neutral-400 mb-1.5 pl-1 block">Email <span className="text-neutral-400">(for confirmation)</span></label>
+                                    <input
+                                        type="email"
+                                        placeholder="name@example.com"
+                                        value={form.email}
+                                        onChange={(e) => setForm({ ...form, email: e.target.value })}
+                                        className="w-full px-4 py-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-2 focus:ring-brand-500/50 outline-none transition-all text-sm"
                                     />
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
@@ -516,6 +552,16 @@ export default function ReceptionDashboard() {
                                         onChange={(e) => setAppointmentForm({ ...appointmentForm, name: e.target.value })}
                                         className="w-full px-4 py-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-2 focus:ring-brand-500/50 outline-none transition-all text-sm"
                                         required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-neutral-500 dark:text-neutral-400 mb-1.5 pl-1 block">Email <span className="text-neutral-400">(for reminder)</span></label>
+                                    <input
+                                        type="email"
+                                        placeholder="name@example.com"
+                                        value={appointmentForm.email}
+                                        onChange={(e) => setAppointmentForm({ ...appointmentForm, email: e.target.value })}
+                                        className="w-full px-4 py-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-2 focus:ring-brand-500/50 outline-none transition-all text-sm"
                                     />
                                 </div>
                                 <div>

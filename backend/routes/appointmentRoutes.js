@@ -7,6 +7,21 @@ const Organization = require("../models/Organization");
 const logger      = require("../utils/logger");
 const { generateSlots, formatTimeStr } = require("../utils/slotGenerator");
 
+async function assertAppointmentsEnabledForOrgId(orgId) {
+    const org = await Organization.findById(orgId).select("industry settings.allowAppointments");
+    if (!org) return { ok: false, status: 404, message: "Organization not found" };
+
+    const allowAppointments = org.settings?.allowAppointments !== false;
+    const isSalon = org.industry === "salon";
+    if (!allowAppointments || isSalon) {
+        return { ok: false, status: 403, message: "Appointments are disabled for this organization" };
+    }
+
+    return { ok: true };
+}
+
+const AGENT_ROLES = ["AGENT", "DOCTOR"]; // support legacy data where staff were stored as DOCTOR
+
 // ─── PUBLIC routes (no auth — for kiosk/self-service use) ────────────────────
 
 // GET /appointments/public/:orgId/agents?locationId=
@@ -16,9 +31,12 @@ router.get("/public/:orgId/agents", async (req, res) => {
         const { orgId } = req.params;
         const { locationId } = req.query;
 
+        const policy = await assertAppointmentsEnabledForOrgId(orgId);
+        if (!policy.ok) return res.status(policy.status).json({ message: policy.message });
+
         const filter = {
             organizationId: orgId,
-            role:           "AGENT",
+            role:           { $in: AGENT_ROLES },
             availability:   "Available"
         };
         if (locationId) filter.locationId = locationId;
@@ -41,6 +59,9 @@ router.get("/public/:orgId/slots/:agentId", async (req, res) => {
         const { orgId, agentId } = req.params;
         const { date } = req.query;
 
+        const policy = await assertAppointmentsEnabledForOrgId(orgId);
+        if (!policy.ok) return res.status(policy.status).json({ message: policy.message });
+
         if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
             return res.status(400).json({ message: "date query param required (YYYY-MM-DD)" });
         }
@@ -53,7 +74,7 @@ router.get("/public/:orgId/slots/:agentId", async (req, res) => {
             return res.status(400).json({ message: "Can only book up to 7 days in advance" });
         }
 
-        const agent = await User.findOne({ _id: agentId, organizationId: orgId, role: "AGENT" })
+        const agent = await User.findOne({ _id: agentId, organizationId: orgId, role: { $in: AGENT_ROLES } })
             .select("name avgSessionDuration schedule");
         if (!agent) return res.status(404).json({ message: "Agent not found" });
 
@@ -88,13 +109,22 @@ router.get("/public/:orgId/slots/:agentId", async (req, res) => {
 router.post("/public/:orgId/book", async (req, res) => {
     try {
         const { orgId } = req.params;
-        const { agentId, clientName, clientPhone, date, time, notes, serviceId } = req.body;
+        const { agentId, clientName, clientPhone, clientEmail, date, time, notes, serviceId } = req.body;
 
-        if (!agentId || !clientName || !date || !time) {
+        // Backwards-compat for older kiosk payloads
+        const resolvedAgentId = agentId || req.body.doctorId;
+        const resolvedClientName = clientName || req.body.patientName;
+        const resolvedClientPhone = clientPhone || req.body.phone;
+        const resolvedClientEmail = clientEmail || req.body.email;
+
+        const policy = await assertAppointmentsEnabledForOrgId(orgId);
+        if (!policy.ok) return res.status(policy.status).json({ message: policy.message });
+
+        if (!resolvedAgentId || !resolvedClientName || !date || !time) {
             return res.status(400).json({ message: "agentId, clientName, date, and time are required" });
         }
 
-        const agent = await User.findOne({ _id: agentId, organizationId: orgId, role: "AGENT" })
+        const agent = await User.findOne({ _id: resolvedAgentId, organizationId: orgId, role: { $in: AGENT_ROLES } })
             .select("name avgSessionDuration schedule locationId");
         if (!agent) return res.status(404).json({ message: "Agent not found" });
 
@@ -107,7 +137,7 @@ router.post("/public/:orgId/book", async (req, res) => {
         if (scheduledAt > maxDate) return res.status(400).json({ message: "Can only book up to 7 days in advance" });
 
         const existing = await Appointment.findOne({
-            agentId,
+            agentId: resolvedAgentId,
             organizationId: orgId,
             scheduledAt,
             status: { $in: ["scheduled", "arrived"] }
@@ -117,16 +147,17 @@ router.post("/public/:orgId/book", async (req, res) => {
         const appointment = await Appointment.create({
             organizationId: orgId,
             locationId:     agent.locationId,
-            agentId,
+            agentId:        resolvedAgentId,
             serviceId:      serviceId || agent.serviceId,
-            clientName:     clientName.trim(),
-            clientPhone:    clientPhone?.trim() || "",
+            clientName:     resolvedClientName.trim(),
+            clientPhone:    resolvedClientPhone?.trim() || "",
+            clientEmail:    resolvedClientEmail?.trim() || "",
             scheduledAt,
             notes:          notes?.trim() || "",
             status:         "scheduled"
         });
 
-        logger.info("Appointment booked via public endpoint", { appointmentId: appointment._id, agentId, scheduledAt });
+        logger.info("Appointment booked via public endpoint", { appointmentId: appointment._id, agentId: resolvedAgentId, scheduledAt });
 
         res.status(201).json({
             success: true,
@@ -134,6 +165,8 @@ router.post("/public/:orgId/book", async (req, res) => {
             appointment: {
                 id:        appointment._id,
                 agentName: agent.name,
+                doctorName: agent.name,
+                serviceName: agent.name,
                 date,
                 time,
                 scheduledAt
@@ -150,11 +183,14 @@ router.post("/public/:orgId/book", async (req, res) => {
 // POST /appointments/book — book via authenticated staff (operator / agent)
 router.post("/book", auth, async (req, res) => {
     try {
-        const { agentId, clientName, clientPhone, scheduledAt, notes, serviceId } = req.body;
+        const { agentId, clientName, clientPhone, clientEmail, scheduledAt, notes, serviceId } = req.body;
         const organizationId = req.user.organizationId;
         const locationId     = req.user.locationId;
 
-        const agent = await User.findOne({ _id: agentId, organizationId, role: "AGENT" });
+        const policy = await assertAppointmentsEnabledForOrgId(organizationId);
+        if (!policy.ok) return res.status(policy.status).json({ message: policy.message });
+
+        const agent = await User.findOne({ _id: agentId, organizationId, role: { $in: AGENT_ROLES } });
         if (!agent) return res.status(404).json({ message: "Agent not found" });
 
         const appointment = await Appointment.create({
@@ -164,6 +200,7 @@ router.post("/book", auth, async (req, res) => {
             serviceId:   serviceId || agent.serviceId,
             clientName,
             clientPhone: clientPhone || "",
+            clientEmail: clientEmail || "",
             scheduledAt,
             notes:       notes || "",
             status:      "scheduled"
@@ -181,6 +218,9 @@ router.get("/agent/:agentId/today", auth, async (req, res) => {
     try {
         const { agentId }    = req.params;
         const organizationId = req.user.organizationId;
+
+        const policy = await assertAppointmentsEnabledForOrgId(organizationId);
+        if (!policy.ok) return res.status(policy.status).json({ message: policy.message });
 
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
@@ -207,6 +247,9 @@ router.get("/agent/:agentId/upcoming", auth, async (req, res) => {
         const { agentId }    = req.params;
         const organizationId = req.user.organizationId;
 
+        const policy = await assertAppointmentsEnabledForOrgId(organizationId);
+        if (!policy.ok) return res.status(policy.status).json({ message: policy.message });
+
         const now            = new Date();
         const sevenDaysLater = new Date();
         sevenDaysLater.setDate(sevenDaysLater.getDate() + 7);
@@ -229,6 +272,9 @@ router.get("/agent/:agentId/upcoming", auth, async (req, res) => {
 // PUT /appointments/:id/arrive — mark appointment arrived
 router.put("/:id/arrive", auth, async (req, res) => {
     try {
+        const policy = await assertAppointmentsEnabledForOrgId(req.user.organizationId);
+        if (!policy.ok) return res.status(policy.status).json({ message: policy.message });
+
         const appointment = await Appointment.findOneAndUpdate(
             { _id: req.params.id, organizationId: req.user.organizationId },
             { status: "arrived" },
@@ -245,6 +291,9 @@ router.put("/:id/arrive", auth, async (req, res) => {
 // PUT /appointments/:id/cancel — cancel appointment
 router.put("/:id/cancel", auth, async (req, res) => {
     try {
+        const policy = await assertAppointmentsEnabledForOrgId(req.user.organizationId);
+        if (!policy.ok) return res.status(policy.status).json({ message: policy.message });
+
         const appointment = await Appointment.findOneAndUpdate(
             { _id: req.params.id, organizationId: req.user.organizationId },
             { status: "cancelled" },

@@ -21,13 +21,14 @@ export default function AdminLogin() {
         setLoading(true);
 
         try {
-            const res = await api.post("/admin/login", formData);
-            localStorage.setItem("adminId", res.data.admin.id);
-            localStorage.setItem("adminName", res.data.admin.name);
-            localStorage.setItem("hospitalId", res.data.admin.hospitalId);
+            const res = await api.post("/auth/login", formData);
+            const user = res.data?.user;
+            localStorage.setItem("adminId", user?.id);
+            localStorage.setItem("adminName", user?.name);
+            localStorage.setItem("hospitalId", user?.hospitalId);
             router.push("/developer");
         } catch (err: any) {
-            setError(err.response?.data?.message || err.response?.data?.errors?.[0]?.message || "Login failed");
+            setError(err.response?.data?.errors?.[0]?.message || err.response?.data?.message || "Login failed");
         } finally {
             setLoading(false);
         }

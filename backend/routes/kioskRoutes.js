@@ -43,7 +43,21 @@ router.get("/:slug/services", async (req, res) => {
             };
         }));
 
-        res.json({ success: true, organization: { id: org._id, name: org.name }, data: servicesWithQueues });
+        res.json({
+            success: true,
+            organization: {
+                id: org._id,
+                name: org.name,
+                slug: org.slug,
+                industry: org.industry,
+                settings: {
+                    allowAppointments: org.settings?.allowAppointments,
+                    allowWalkIn: org.settings?.allowWalkIn,
+                    kioskEnabled: org.settings?.kioskEnabled,
+                },
+            },
+            data: servicesWithQueues,
+        });
     } catch (err) {
         logger.error("Kiosk Services fetch error", { error: err.message });
         res.status(500).json({ success: false, message: "Server Error" });
@@ -57,7 +71,7 @@ router.get("/:slug/doctors", async (req, res) => {
         if (!org) return res.status(404).json({ success: false, message: "Organization not found" });
 
         // Return agents in old format for backward compat
-        const agents = await User.find({ organizationId: org._id, role: "AGENT", availability: "Available" })
+        const agents = await User.find({ organizationId: org._id, role: { $in: ["AGENT", "DOCTOR"] }, availability: "Available" })
             .select("name serviceCategory avgSessionDuration");
 
         const data = await Promise.all(agents.map(async (agent) => {
@@ -91,7 +105,7 @@ router.get("/:slug/agents", async (req, res) => {
         if (!org) return res.status(404).json({ success: false, message: "Organization not found" });
 
         const { serviceId } = req.query;
-        const filter = { organizationId: org._id, role: "AGENT", availability: "Available" };
+        const filter = { organizationId: org._id, role: { $in: ["AGENT", "DOCTOR"] }, availability: "Available" };
         if (serviceId) filter.serviceId = serviceId;
 
         const agents = await User.find(filter).select("name serviceCategory avgSessionDuration serviceId");
@@ -137,6 +151,7 @@ router.post("/:slug/enqueue", async (req, res) => {
 
         const resolvedClientName  = clientName || name;
         const resolvedClientPhone = clientPhone || phone || "";
+        const resolvedClientEmail = req.body.clientEmail || req.body.email || "";
         const resolvedNotes       = notes || description || "Self check-in via Kiosk";
         const resolvedAgentId     = agentId || doctorId || null;
 
@@ -159,7 +174,7 @@ router.post("/:slug/enqueue", async (req, res) => {
 
         // Validate agentId belongs to this org
         if (resolvedAgentId) {
-            const agentCheck = await User.findOne({ _id: resolvedAgentId, organizationId: org._id, role: "AGENT" });
+            const agentCheck = await User.findOne({ _id: resolvedAgentId, organizationId: org._id, role: { $in: ["AGENT", "DOCTOR"] } });
             if (!agentCheck) return res.status(404).json({ message: "Agent not found" });
         }
 
@@ -174,6 +189,7 @@ router.post("/:slug/enqueue", async (req, res) => {
             agentId:        resolvedAgentId,
             clientName:     resolvedClientName.trim(),
             clientPhone:    resolvedClientPhone.trim(),
+            clientEmail:    resolvedClientEmail.trim(),
             notes:          resolvedNotes,
             tokenNumber,
             sortOrder:      tokenNumber,
@@ -192,8 +208,8 @@ router.post("/:slug/enqueue", async (req, res) => {
             ? `${process.env.FRONTEND_URL}/status/${uniqueLinkId}`
             : `http://localhost:3000/status/${uniqueLinkId}`;
 
-        if (resolvedClientPhone) {
-            sendQueueConfirmation(resolvedClientPhone, resolvedClientName, tokenNumber, trackingUrl, service.name);
+        if (resolvedClientEmail) {
+            sendQueueConfirmation(resolvedClientEmail, resolvedClientName, tokenNumber, trackingUrl, service.name);
         }
 
         res.status(201).json({

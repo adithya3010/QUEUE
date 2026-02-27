@@ -77,13 +77,13 @@ const requireApiKey = async (req, res, next) => {
 
         // Rate Limiting & Usage Tracking Logic
         const planLimits = {
-            "Starter":    1000,
-            "Growth":     10000,
+            "Starter": 1000,
+            "Growth": 10000,
             "Enterprise": Infinity,
-            "Basic":      1000,    // backward compat
-            "Pro":        10000    // backward compat
+            "Basic": 1000,    // backward compat
+            "Pro": 10000    // backward compat
         };
-        const orgPlan  = keyRecord.organizationId.subscriptionPlan || "Starter";
+        const orgPlan = keyRecord.organizationId.subscriptionPlan || "Starter";
         const maxLimit = planLimits[orgPlan] || 1000;
 
         const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
@@ -104,8 +104,9 @@ const requireApiKey = async (req, res, next) => {
         }
 
         req.organization = keyRecord.organizationId;   // new primary accessor
-        req.hospital     = keyRecord.organizationId;   // backward compat alias kept for v1 controller
-        req.apiKey       = keyRecord;
+        req.hospital = keyRecord.organizationId;   // backward compat alias kept for v1 controller
+        req.organizationId = keyRecord.organizationId._id; // for apiv2Routes
+        req.apiKey = keyRecord;
 
         next();
     } catch (err) {

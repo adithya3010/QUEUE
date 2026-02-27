@@ -32,26 +32,28 @@ export default function AdminSignup() {
         setLoading(true);
         try {
             const signupData = {
-                hospitalName: formData.hospitalName,
+                orgName: formData.hospitalName,
+                hospitalName: formData.hospitalName, // legacy alias still accepted
                 name: formData.name,
                 email: formData.email,
                 password: formData.password
             };
-            await api.post("/admin/signup", signupData);
+            await api.post("/auth/signup", signupData);
 
             // Auto login after signup
-            const loginRes = await api.post("/admin/login", {
+            const loginRes = await api.post("/auth/login", {
                 email: formData.email,
                 password: formData.password
             });
 
-            localStorage.setItem("adminId", loginRes.data.admin.id);
-            localStorage.setItem("adminName", loginRes.data.admin.name);
-            localStorage.setItem("hospitalId", loginRes.data.admin.hospitalId);
+            const user = loginRes.data?.user;
+            localStorage.setItem("adminId", user?.id);
+            localStorage.setItem("adminName", user?.name);
+            localStorage.setItem("hospitalId", user?.hospitalId);
 
             router.push("/developer");
         } catch (err: any) {
-            setError(err.response?.data?.message || err.response?.data?.errors?.[0]?.message || "Signup failed");
+            setError(err.response?.data?.errors?.[0]?.message || err.response?.data?.message || "Signup failed");
         } finally {
             setLoading(false);
         }

@@ -37,7 +37,7 @@ function WalkIn({ hospitalId }: { hospitalId: string }) {
     const [services, setServices] = useState([]);
     const [selectedService, setSelectedService] = useState<any>(null);
     const [loadingServices, setLoadingServices] = useState(true);
-    const [formData, setFormData] = useState({ name: "", phone: "", description: "" });
+    const [formData, setFormData] = useState({ name: "", email: "", phone: "", description: "" });
     const [submitLoading, setSubmitLoading] = useState(false);
     const [tokenResult, setTokenResult] = useState<any>(null);
     const [error, setError] = useState("");
@@ -66,6 +66,7 @@ function WalkIn({ hospitalId }: { hospitalId: string }) {
         try {
             const res = await api.post(`/kiosk/${hospitalId}/enqueue`, {
                 ...formData,
+                clientEmail: formData.email,
                 serviceId: selectedService._id,  // new field
                 agentId: selectedService._id,     // compat alias
                 doctorId: selectedService._id,    // legacy compat
@@ -164,7 +165,7 @@ function WalkIn({ hospitalId }: { hospitalId: string }) {
             ) : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
                     {services.map((svc: any) => (
-                        <button key={svc._id} onClick={() => { setSelectedService(svc); setError(""); setFormData({ name: "", phone: "", description: "" }); }}
+                        <button key={svc._id} onClick={() => { setSelectedService(svc); setError(""); setFormData({ name: "", email: "", phone: "", description: "" }); }}
                             className="block w-full text-left bg-white/5 hover:bg-white/10 backdrop-blur-xl border border-white/10 hover:border-light-blue-500/50 rounded-[32px] p-8 transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(6,182,212,0.15)] group">
                             <div className="w-20 h-20 bg-gradient-to-br from-light-blue-500 to-primary-600 rounded-full flex items-center justify-center mb-6 shadow-lg shadow-light-blue-500/20 group-hover:scale-110 transition-transform">
                                 <span className="text-3xl font-black text-white">{svc.name.charAt(0).toUpperCase()}</span>
@@ -193,20 +194,26 @@ function AppointmentBooking({ hospitalId }: { hospitalId: string }) {
     const [slots, setSlots] = useState<{ time: string; label: string }[]>([]);
     const [loadingSlots, setLoadingSlots] = useState(false);
     const [selectedSlot, setSelectedSlot] = useState<{ time: string; label: string } | null>(null);
-    const [form, setForm] = useState({ name: "", phone: "", notes: "" });
+    const [form, setForm] = useState({ name: "", email: "", phone: "", notes: "" });
     const [submitting, setSubmitting] = useState(false);
     const [confirmed, setConfirmed] = useState<any>(null);
     const [error, setError] = useState("");
 
     const days = getNext7Days();
 
-    // Load services for appointment booking (using compat /doctors endpoint for slot availability)
+    // Load agents for appointment booking
     useEffect(() => {
-        api.get(`/kiosk/${hospitalId}/services`).catch(() =>
-            api.get(`/kiosk/${hospitalId}/doctors`)
-        ).then(res => {
-            if (res.data.success) setDoctors(res.data.data);
-        }).catch(() => { });
+        let cancelled = false;
+        fetch(`${API_BASE}/api/appointments/public/${hospitalId}/agents`)
+            .then(r => r.json())
+            .then(data => {
+                if (cancelled) return;
+                if (data?.success) setDoctors(data.agents || []);
+                else setDoctors([]);
+            })
+            .catch(() => { if (!cancelled) setDoctors([]); });
+
+        return () => { cancelled = true; };
     }, [hospitalId]);
 
     // Load slots when doctor + date are selected
@@ -231,9 +238,10 @@ function AppointmentBooking({ hospitalId }: { hospitalId: string }) {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    doctorId: selectedDoc._id,
-                    patientName: form.name.trim(),
-                    phone: form.phone.trim(),
+                    agentId: selectedDoc._id,
+                    clientName: form.name.trim(),
+                    clientPhone: form.phone.trim(),
+                    clientEmail: form.email.trim(),
                     notes: form.notes.trim(),
                     date: selectedDate,
                     time: selectedSlot.time,
@@ -243,7 +251,7 @@ function AppointmentBooking({ hospitalId }: { hospitalId: string }) {
             if (data.success) {
                 setConfirmed(data.appointment);
                 setTimeout(() => {
-                    setConfirmed(null); setStep(1); setSelectedDoc(null); setSelectedDate(""); setSelectedSlot(null); setForm({ name: "", phone: "", notes: "" });
+                    setConfirmed(null); setStep(1); setSelectedDoc(null); setSelectedDate(""); setSelectedSlot(null); setForm({ name: "", email: "", phone: "", notes: "" });
                 }, 14000);
             } else {
                 setError(data.message || "Booking failed. Please try again.");
@@ -264,7 +272,7 @@ function AppointmentBooking({ hospitalId }: { hospitalId: string }) {
                     <div className="flex justify-between"><span className="text-gray-400">Date</span><span className="text-white font-bold">{new Date(confirmed.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</span></div>
                     <div className="flex justify-between"><span className="text-gray-400">Time</span><span className="text-white font-bold">{selectedSlot?.label}</span></div>
                 </div>
-                {form.phone && <p className="text-gray-400 text-sm mb-4">📱 A WhatsApp confirmation will be sent to {form.phone}</p>}
+                {form.email && <p className="text-gray-400 text-sm mb-4">✉️ A confirmation email will be sent to {form.email}</p>}
                 <p className="text-sm text-gray-500 animate-pulse mt-6">Screen resets in a moment...</p>
             </div>
         );
@@ -394,7 +402,8 @@ function AppointmentBooking({ hospitalId }: { hospitalId: string }) {
                         <div className="space-y-5">
                             {[
                                 { label: "Full Name *", key: "name", type: "text", icon: <User className="w-6 h-6" />, placeholder: "Enter your name", required: true },
-                                { label: "Phone (for WhatsApp confirmation)", key: "phone", type: "tel", icon: <Phone className="w-6 h-6" />, placeholder: "Enter phone number", required: false },
+                                { label: "Email (for confirmation)", key: "email", type: "email", icon: <User className="w-6 h-6" />, placeholder: "Enter email", required: false },
+                                { label: "Phone (Optional)", key: "phone", type: "tel", icon: <Phone className="w-6 h-6" />, placeholder: "Enter phone number", required: false },
                             ].map(f => (
                                 <div key={f.key}>
                                     <label className="block text-sm font-bold text-gray-400 uppercase tracking-widest mb-2 ml-2">{f.label}</label>
@@ -434,6 +443,24 @@ export default function KioskPage() {
     const params = useParams();
     const hospitalId = params.hospitalId as string;
     const [mode, setMode] = useState<"walkin" | "appointment">("walkin");
+    const [appointmentsEnabled, setAppointmentsEnabled] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        api.get(`/kiosk/${hospitalId}/services`).then((res) => {
+            if (cancelled) return;
+            const org = res?.data?.organization;
+            if (!org) return;
+            const enabled = org.industry !== "salon" && org.settings?.allowAppointments !== false;
+            setAppointmentsEnabled(enabled);
+            if (!enabled) setMode("walkin");
+        }).catch(() => {
+            // If kiosk org info can't be loaded, fall back to showing both modes
+        });
+        return () => { cancelled = true; };
+    }, [hospitalId]);
+
+    const showAppointments = appointmentsEnabled ?? true;
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-[#0c0516] via-[#0f172a] to-[#0c0516] p-8 relative overflow-hidden flex flex-col items-center">
@@ -453,15 +480,17 @@ export default function KioskPage() {
                     className={`flex items-center gap-2.5 px-6 py-3 rounded-xl font-bold text-base transition-all ${mode === "walkin" ? "bg-light-blue-500 text-white shadow-lg shadow-light-blue-500/30" : "text-gray-400 hover:text-gray-200"}`}>
                     <UserPlus className="w-5 h-5" /> Walk-In Check-In
                 </button>
-                <button onClick={() => setMode("appointment")}
-                    className={`flex items-center gap-2.5 px-6 py-3 rounded-xl font-bold text-base transition-all ${mode === "appointment" ? "bg-light-blue-500 text-white shadow-lg shadow-light-blue-500/30" : "text-gray-400 hover:text-gray-200"}`}>
-                    <CalendarCheck className="w-5 h-5" /> Book Appointment
-                </button>
+                {showAppointments && (
+                    <button onClick={() => setMode("appointment")}
+                        className={`flex items-center gap-2.5 px-6 py-3 rounded-xl font-bold text-base transition-all ${mode === "appointment" ? "bg-light-blue-500 text-white shadow-lg shadow-light-blue-500/30" : "text-gray-400 hover:text-gray-200"}`}>
+                        <CalendarCheck className="w-5 h-5" /> Book Appointment
+                    </button>
+                )}
             </div>
 
             {/* Content */}
             <div className="relative z-10 w-full flex justify-center">
-                {mode === "walkin" ? <WalkIn hospitalId={hospitalId} /> : <AppointmentBooking hospitalId={hospitalId} />}
+                {!showAppointments || mode === "walkin" ? <WalkIn hospitalId={hospitalId} /> : <AppointmentBooking hospitalId={hospitalId} />}
             </div>
         </div>
     );
