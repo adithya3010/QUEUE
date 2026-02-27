@@ -31,48 +31,56 @@ function getNext7Days() {
     return days;
 }
 
-// ─── Walk-In View (existing) ─────────────────────────────────────────────────
+// ─── Walk-In View ─────────────────────────────────────────────────────────────
 
 function WalkIn({ hospitalId }: { hospitalId: string }) {
-    const [doctors, setDoctors] = useState([]);
-    const [selectedDoc, setSelectedDoc] = useState<any>(null);
-    const [loadingDocs, setLoadingDocs] = useState(true);
+    const [services, setServices] = useState([]);
+    const [selectedService, setSelectedService] = useState<any>(null);
+    const [loadingServices, setLoadingServices] = useState(true);
     const [formData, setFormData] = useState({ name: "", phone: "", description: "" });
     const [submitLoading, setSubmitLoading] = useState(false);
     const [tokenResult, setTokenResult] = useState<any>(null);
     const [error, setError] = useState("");
 
-    const loadDoctors = useCallback(async () => {
+    const loadServices = useCallback(async () => {
         try {
-            setLoadingDocs(true);
-            const res = await api.get(`/kiosk/${hospitalId}/doctors`);
-            if (res.data.success) setDoctors(res.data.data);
-        } catch { } finally { setLoadingDocs(false); }
+            setLoadingServices(true);
+            // Try new /services endpoint first; fall back to /doctors for compat
+            const res = await api.get(`/kiosk/${hospitalId}/services`).catch(() =>
+                api.get(`/kiosk/${hospitalId}/doctors`)
+            );
+            if (res.data.success) setServices(res.data.data);
+        } catch { } finally { setLoadingServices(false); }
     }, [hospitalId]);
 
     useEffect(() => {
-        loadDoctors();
-        const interval = setInterval(loadDoctors, 30000);
+        loadServices();
+        const interval = setInterval(loadServices, 30000);
         return () => clearInterval(interval);
-    }, [loadDoctors]);
+    }, [loadServices]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setSubmitLoading(true);
         setError("");
         try {
-            const res = await api.post(`/kiosk/${hospitalId}/enqueue`, { ...formData, doctorId: selectedDoc._id });
+            const res = await api.post(`/kiosk/${hospitalId}/enqueue`, {
+                ...formData,
+                serviceId: selectedService._id,  // new field
+                agentId: selectedService._id,     // compat alias
+                doctorId: selectedService._id,    // legacy compat
+            });
             if (res.data.success) {
                 setTokenResult(res.data.tokenNumber);
-                loadDoctors();
-                setTimeout(() => { setTokenResult(null); setSelectedDoc(null); }, 10000);
+                loadServices();
+                setTimeout(() => { setTokenResult(null); setSelectedService(null); }, 10000);
             }
         } catch (err: any) {
-            setError(err.response?.data?.message || "Failed to check in. Please see reception.");
+            setError(err.response?.data?.message || "Failed to check in. Please see the counter.");
         } finally { setSubmitLoading(false); }
     };
 
-    if (loadingDocs && doctors.length === 0)
+    if (loadingServices && services.length === 0)
         return <div className="flex items-center justify-center h-64"><div className="w-14 h-14 border-4 border-light-blue-500 border-t-transparent rounded-full animate-spin" /></div>;
 
     if (tokenResult) {
@@ -85,26 +93,28 @@ function WalkIn({ hospitalId }: { hospitalId: string }) {
                     <p className="text-gray-400 font-bold uppercase tracking-widest text-sm mb-2">Your Token Number</p>
                     <p className="text-7xl font-black text-white tracking-widest">{tokenResult}</p>
                 </div>
-                <p className="text-gray-400 flex items-center justify-center gap-2"><Stethoscope className="w-5 h-5" /> Seeing <strong>{selectedDoc?.name}</strong></p>
+                <p className="text-gray-400 flex items-center justify-center gap-2">
+                    <Stethoscope className="w-5 h-5" /> Service: <strong>{selectedService?.name}</strong>
+                </p>
                 <p className="text-sm text-gray-500 animate-pulse mt-8">Screen will reset automatically...</p>
             </div>
         );
     }
 
-    if (selectedDoc) {
+    if (selectedService) {
         return (
             <div className="max-w-2xl w-full bg-[#1e293b]/90 backdrop-blur-2xl border border-white/10 rounded-[40px] p-10 shadow-2xl animate-slideUp">
-                <button onClick={() => setSelectedDoc(null)} className="mb-8 text-light-blue-400 hover:text-light-blue-300 font-bold flex items-center gap-2 transition-colors">
-                    <ChevronLeft className="w-5 h-5" /> Back to Doctors
+                <button onClick={() => setSelectedService(null)} className="mb-8 text-light-blue-400 hover:text-light-blue-300 font-bold flex items-center gap-2 transition-colors">
+                    <ChevronLeft className="w-5 h-5" /> Back to Services
                 </button>
                 <div className="flex items-center gap-6 p-6 bg-black/30 rounded-3xl mb-10 border border-white/5">
                     <div className="w-20 h-20 bg-light-blue-500/20 rounded-full flex items-center justify-center border border-light-blue-500/30 flex-shrink-0">
                         <Stethoscope className="w-10 h-10 text-light-blue-400" />
                     </div>
                     <div>
-                        <h2 className="text-3xl font-bold text-white mb-1">{selectedDoc.name}</h2>
-                        <p className="text-gray-400 font-medium text-lg">{selectedDoc.specialization}</p>
-                        <p className="text-success-400 font-bold mt-2 flex items-center gap-2"><Clock className="w-5 h-5" />{selectedDoc.estimatedWaitMins} min estimated wait</p>
+                        <h2 className="text-3xl font-bold text-white mb-1">{selectedService.name}</h2>
+                        <p className="text-gray-400 font-medium text-lg">{selectedService.category || selectedService.specialization}</p>
+                        <p className="text-success-400 font-bold mt-2 flex items-center gap-2"><Clock className="w-5 h-5" />{selectedService.estimatedWaitMins} min estimated wait</p>
                     </div>
                 </div>
                 {error && <div className="mb-8 p-5 bg-red-500/20 border border-red-500/40 rounded-2xl flex items-center gap-4"><AlertCircle className="w-7 h-7 text-red-400 flex-shrink-0" /><p className="text-red-200 font-medium">{error}</p></div>}
@@ -130,7 +140,7 @@ function WalkIn({ hospitalId }: { hospitalId: string }) {
                             <div className="absolute left-6 top-6 text-gray-500"><FileText className="w-6 h-6" /></div>
                             <textarea name="description" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} rows={3}
                                 className="w-full pl-16 pr-6 py-5 rounded-2xl bg-white/5 border border-white/10 text-xl text-white outline-none focus:border-light-blue-500 focus:ring-2 focus:ring-light-blue-500/30 transition-all placeholder:text-gray-600 resize-none"
-                                placeholder="Brief symptom description..." />
+                                placeholder="Brief description of your request..." />
                         </div>
                     </div>
                     <button disabled={submitLoading} type="submit"
@@ -145,25 +155,25 @@ function WalkIn({ hospitalId }: { hospitalId: string }) {
     return (
         <div className="w-full max-w-6xl animate-slideUp">
             <h2 className="text-2xl font-bold text-gray-300 mb-8 text-center flex items-center justify-center gap-3">
-                <UserPlus className="w-8 h-8 text-light-blue-500" /> Who would you like to see today?
+                <UserPlus className="w-8 h-8 text-light-blue-500" /> Choose a service to join the queue
             </h2>
-            {doctors.length === 0 ? (
+            {services.length === 0 ? (
                 <div className="text-center p-12 bg-white/5 backdrop-blur-xl border border-white/10 rounded-[40px]">
-                    <p className="text-2xl text-gray-400">No doctors are currently available. Please see reception.</p>
+                    <p className="text-2xl text-gray-400">No services are currently available. Please see the counter.</p>
                 </div>
             ) : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {doctors.map((doc: any) => (
-                        <button key={doc._id} onClick={() => { setSelectedDoc(doc); setError(""); setFormData({ name: "", phone: "", description: "" }); }}
+                    {services.map((svc: any) => (
+                        <button key={svc._id} onClick={() => { setSelectedService(svc); setError(""); setFormData({ name: "", phone: "", description: "" }); }}
                             className="block w-full text-left bg-white/5 hover:bg-white/10 backdrop-blur-xl border border-white/10 hover:border-light-blue-500/50 rounded-[32px] p-8 transition-all duration-300 hover:-translate-y-2 hover:shadow-[0_20px_40px_rgba(6,182,212,0.15)] group">
                             <div className="w-20 h-20 bg-gradient-to-br from-light-blue-500 to-primary-600 rounded-full flex items-center justify-center mb-6 shadow-lg shadow-light-blue-500/20 group-hover:scale-110 transition-transform">
-                                <span className="text-3xl font-black text-white">{doc.name.charAt(0).toUpperCase()}</span>
+                                <span className="text-3xl font-black text-white">{svc.name.charAt(0).toUpperCase()}</span>
                             </div>
-                            <h3 className="text-2xl font-bold text-white mb-2">{doc.name}</h3>
-                            <p className="text-light-blue-400 font-medium text-lg mb-6">{doc.specialization}</p>
+                            <h3 className="text-2xl font-bold text-white mb-2">{svc.name}</h3>
+                            <p className="text-light-blue-400 font-medium text-lg mb-6">{svc.category || svc.specialization || svc.description}</p>
                             <div className="flex items-center justify-between border-t border-white/10 pt-6">
-                                <div><p className="text-sm text-gray-400 mb-1">In Queue</p><p className="font-bold text-white text-xl">{doc.currentQueueLength} patients</p></div>
-                                <div className="text-right"><p className="text-sm text-gray-400 mb-1">Est. Wait</p><p className="font-bold text-success-400 text-xl">{doc.estimatedWaitMins} min</p></div>
+                                <div><p className="text-sm text-gray-400 mb-1">In Queue</p><p className="font-bold text-white text-xl">{svc.currentQueueLength} clients</p></div>
+                                <div className="text-right"><p className="text-sm text-gray-400 mb-1">Est. Wait</p><p className="font-bold text-success-400 text-xl">{svc.estimatedWaitMins} min</p></div>
                             </div>
                         </button>
                     ))}
@@ -190,9 +200,11 @@ function AppointmentBooking({ hospitalId }: { hospitalId: string }) {
 
     const days = getNext7Days();
 
-    // Load doctors for appointment booking (using public route)
+    // Load services for appointment booking (using compat /doctors endpoint for slot availability)
     useEffect(() => {
-        api.get(`/kiosk/${hospitalId}/doctors`).then(res => {
+        api.get(`/kiosk/${hospitalId}/services`).catch(() =>
+            api.get(`/kiosk/${hospitalId}/doctors`)
+        ).then(res => {
             if (res.data.success) setDoctors(res.data.data);
         }).catch(() => { });
     }, [hospitalId]);
@@ -248,7 +260,7 @@ function AppointmentBooking({ hospitalId }: { hospitalId: string }) {
                 <h2 className="text-4xl font-bold text-white mb-4">Appointment Booked!</h2>
                 <p className="text-success-200 text-xl mb-8">Your appointment has been confirmed.</p>
                 <div className="bg-black/40 rounded-3xl p-8 mb-6 border border-white/10 space-y-3 text-left">
-                    <div className="flex justify-between"><span className="text-gray-400">Doctor</span><span className="text-white font-bold">{confirmed.doctorName}</span></div>
+                    <div className="flex justify-between"><span className="text-gray-400">Service</span><span className="text-white font-bold">{confirmed.doctorName || confirmed.serviceName}</span></div>
                     <div className="flex justify-between"><span className="text-gray-400">Date</span><span className="text-white font-bold">{new Date(confirmed.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</span></div>
                     <div className="flex justify-between"><span className="text-gray-400">Time</span><span className="text-white font-bold">{selectedSlot?.label}</span></div>
                 </div>
@@ -262,7 +274,7 @@ function AppointmentBooking({ hospitalId }: { hospitalId: string }) {
         <div className="w-full max-w-3xl animate-slideUp">
             {/* Step indicator */}
             <div className="flex items-center justify-center gap-2 mb-10">
-                {["Doctor", "Date", "Slot", "Confirm"].map((s, i) => (
+                {["Service", "Date", "Slot", "Confirm"].map((s, i) => (
                     <React.Fragment key={s}>
                         <div className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all ${step === i + 1 ? "bg-light-blue-500 text-white shadow-lg shadow-light-blue-500/40" : step > i + 1 ? "bg-success-500/20 text-success-400 border border-success-500/40" : "bg-white/5 text-gray-500 border border-white/10"}`}>
                             <span>{step > i + 1 ? "✓" : i + 1}</span> {s}
@@ -282,10 +294,10 @@ function AppointmentBooking({ hospitalId }: { hospitalId: string }) {
                     </div>
                 )}
 
-                {/* STEP 1: Select Doctor */}
+                {/* STEP 1: Select Service */}
                 {step === 1 && (
                     <div>
-                        <h3 className="text-2xl font-bold text-white mb-6">Select a Doctor</h3>
+                        <h3 className="text-2xl font-bold text-white mb-6">Select a Service</h3>
                         <div className="grid md:grid-cols-2 gap-4">
                             {doctors.map((doc: any) => (
                                 <button key={doc._id} onClick={() => { setSelectedDoc(doc); setStep(2); setSelectedDate(""); setSlots([]); setSelectedSlot(null); }}
@@ -295,13 +307,13 @@ function AppointmentBooking({ hospitalId }: { hospitalId: string }) {
                                     </div>
                                     <div className="min-w-0">
                                         <p className="font-bold text-white truncate">{doc.name}</p>
-                                        <p className="text-light-blue-400 text-sm">{doc.specialization}</p>
-                                        <p className="text-gray-500 text-xs mt-1">{doc.avgConsultationTime || 10} min per slot</p>
+                                        <p className="text-light-blue-400 text-sm">{doc.category || doc.serviceCategory || doc.specialization}</p>
+                                        <p className="text-gray-500 text-xs mt-1">{doc.avgSessionDuration || doc.avgConsultationTime || 10} min per slot</p>
                                     </div>
                                     <ChevronRight className="w-5 h-5 text-gray-600 ml-auto flex-shrink-0" />
                                 </button>
                             ))}
-                            {doctors.length === 0 && <p className="text-gray-400 col-span-2 text-center py-8">No doctors available for appointment booking.</p>}
+                            {doctors.length === 0 && <p className="text-gray-400 col-span-2 text-center py-8">No services available for appointment booking.</p>}
                         </div>
                     </div>
                 )}
@@ -313,7 +325,7 @@ function AppointmentBooking({ hospitalId }: { hospitalId: string }) {
                             <ChevronLeft className="w-5 h-5" /> Back
                         </button>
                         <h3 className="text-2xl font-bold text-white mb-2">Select a Date</h3>
-                        <p className="text-gray-400 text-sm mb-6">Seeing <span className="text-light-blue-400 font-semibold">{selectedDoc?.name}</span> · {selectedDoc?.avgConsultationTime || 10} min slots</p>
+                        <p className="text-gray-400 text-sm mb-6">Service: <span className="text-light-blue-400 font-semibold">{selectedDoc?.name}</span> · {selectedDoc?.avgSessionDuration || selectedDoc?.avgConsultationTime || 10} min slots</p>
                         <div className="grid grid-cols-4 md:grid-cols-7 gap-3">
                             {days.map(d => (
                                 <button key={d.dateStr} onClick={() => { setSelectedDate(d.dateStr); setStep(3); }}
@@ -374,7 +386,7 @@ function AppointmentBooking({ hospitalId }: { hospitalId: string }) {
 
                         {/* Booking summary */}
                         <div className="bg-black/30 rounded-2xl p-5 mb-6 border border-white/10 space-y-2">
-                            <div className="flex justify-between text-sm"><span className="text-gray-400">Doctor</span><span className="text-white font-semibold">{selectedDoc?.name}</span></div>
+                            <div className="flex justify-between text-sm"><span className="text-gray-400">Service</span><span className="text-white font-semibold">{selectedDoc?.name}</span></div>
                             <div className="flex justify-between text-sm"><span className="text-gray-400">Date</span><span className="text-white font-semibold">{new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</span></div>
                             <div className="flex justify-between text-sm"><span className="text-gray-400">Time</span><span className="text-light-blue-400 font-bold">{selectedSlot?.label}</span></div>
                         </div>
@@ -431,7 +443,7 @@ export default function KioskPage() {
 
             {/* Header */}
             <div className="text-center mb-8 relative z-10">
-                <h1 className="text-5xl font-black text-white mb-3 tracking-tight drop-shadow-lg">Welcome to the Clinic</h1>
+                <h1 className="text-5xl font-black text-white mb-3 tracking-tight drop-shadow-lg">Welcome</h1>
                 <p className="text-xl text-light-blue-200 font-medium">Self-Service Kiosk</p>
             </div>
 

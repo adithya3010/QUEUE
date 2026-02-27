@@ -2,20 +2,20 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
 
 const UserSchema = new mongoose.Schema({
-    hospitalId: {
+    organizationId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Hospital",
-        required: true
+        ref: "Organization",
+        required: true                  // was: hospitalId → Hospital
     },
-    branchId: {
-        type: mongoose.Schema.Types.ObjectId,
+    locationId: {
+        type: mongoose.Schema.Types.ObjectId,   // was: branchId
         required: function () {
-            return this.role === "DOCTOR" || this.role === "RECEPTIONIST";
+            return this.role === "AGENT" || this.role === "OPERATOR";
         }
     },
     role: {
         type: String,
-        enum: ["HOSPITAL_ADMIN", "DOCTOR", "RECEPTIONIST"],
+        enum: ["ORG_ADMIN", "AGENT", "OPERATOR"],  // was: HOSPITAL_ADMIN | DOCTOR | RECEPTIONIST
         required: true
     },
     name: {
@@ -39,27 +39,29 @@ const UserSchema = new mongoose.Schema({
         sparse: true
     },
 
-    // ----------------------------------------
-    // DOCTOR Role Fields
-    // ----------------------------------------
-    specialization: {
-        type: String,
+    // ─── AGENT fields (was: DOCTOR) ──────────────────────────────
+    serviceId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Service"                  // primary service this agent works
+    },
+    serviceCategory: {
+        type: String,                   // was: specialization
         required: function () {
-            return this.role === "DOCTOR";
+            return this.role === "AGENT";
         }
     },
-    avgConsultationTime: {
+    avgSessionDuration: {
         type: Number,
-        default: 5
+        default: 5                      // minutes; was: avgConsultationTime
     },
     availability: {
         type: String,
-        enum: ["Available", "Not Available"],
+        enum: ["Available", "Unavailable"],  // was: "Not Available" → "Unavailable"
         default: "Available"
     },
-    pauseMessage: {
+    statusMessage: {
         type: String,
-        default: ""
+        default: ""                     // was: pauseMessage
     },
     schedule: [{
         day: {
@@ -67,24 +69,20 @@ const UserSchema = new mongoose.Schema({
             enum: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
         },
         startTime: String, // HH:MM in 24h format
-        endTime: String
+        endTime:   String
     }],
     metrics: {
-        totalPatientsSeen: { type: Number, default: 0 },
-        avgWaitTimeOverall: { type: Number, default: 0 }
+        totalServed:        { type: Number, default: 0 },  // was: totalPatientsSeen
+        avgWaitTimeMinutes: { type: Number, default: 0 }   // was: avgWaitTimeOverall
     },
 
-    // ----------------------------------------
-    // RECEPTIONIST Role Fields
-    // ----------------------------------------
-    assignedDoctors: [{
+    // ─── OPERATOR fields (was: RECEPTIONIST) ─────────────────────
+    assignedAgents: [{
         type: mongoose.Schema.Types.ObjectId,
-        ref: "User"
+        ref: "User"                     // was: assignedDoctors
     }],
 
-    // ----------------------------------------
-    // Authentication & Security
-    // ----------------------------------------
+    // ─── Authentication & Security ────────────────────────────────
     refreshToken: {
         type: String,
         default: null
@@ -93,7 +91,7 @@ const UserSchema = new mongoose.Schema({
         type: Date,
         default: null
     },
-    resetPasswordToken: String,
+    resetPasswordToken:  String,
     resetPasswordExpiry: Date,
 
 }, { timestamps: true });
@@ -106,6 +104,7 @@ UserSchema.pre("save", async function () {
         this.password = await bcrypt.hash(this.password, 10);
     }
 });
-UserSchema.index({ hospitalId: 1, email: 1 }, { unique: true });
+
+UserSchema.index({ organizationId: 1, email: 1 }, { unique: true });
 
 module.exports = mongoose.model("User", UserSchema);

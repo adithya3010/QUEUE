@@ -1,0 +1,540 @@
+"use client";
+
+import React, { useEffect, useState, useCallback } from "react";
+import api from "@/services/api";
+import { useRouter } from "next/navigation";
+import Loader from "@/components/Loader";
+import { io } from "socket.io-client";
+import {
+    Activity, AlertCircle, AlertTriangle, ArrowUp, Calendar, CheckCircle, Clock, FileText, Mail, Power, RefreshCw, Settings, Smartphone, Stethoscope, TrendingUp, User, Users, X
+} from "lucide-react";
+
+export default function AgentDashboard() {
+    const [agent, setAgent] = useState<any>(null);
+    const [queue, setQueue] = useState<any[]>([]);
+    const [appointments, setAppointments] = useState<any[]>([]);
+    const [summary, setSummary] = useState<any>(null);
+
+    // Completion state
+    const [completingClient, setCompletingClient] = useState<any>(null);
+    const [nextVisitDate, setNextVisitDate] = useState("");
+    const [msg, setMsg] = useState("");
+    const [avgTime, setAvgTime] = useState("");
+    const [statusMessage, setStatusMessage] = useState("");
+    const router = useRouter();
+
+    async function loadAgent() {
+        try {
+            const meRes = await api.get("/auth/me");
+            const userData = meRes.data;
+
+            if (userData.role !== "AGENT" && userData.role !== "DOCTOR" &&
+                userData.role !== "ORG_ADMIN" && userData.role !== "HOSPITAL_ADMIN") {
+                router.push("/operator");
+                return;
+            }
+
+            const res = await api.get("/agents/info");
+            setAgent(res.data);
+            setAvgTime((res.data.avgSessionDuration || res.data.avgConsultationTime || 5).toString());
+        } catch (err: any) {
+            if (err.response?.status === 401) router.push("/login");
+        }
+    }
+
+    const loadQueue = useCallback(async () => {
+        if (!agent?._id) return;
+        try {
+            const res = await api.get(`/queue/${agent._id}`);
+            setQueue(res.data);
+        } catch (err) {
+            console.error("Load queue error", err);
+        }
+    }, [agent?._id]);
+
+    const loadSummary = useCallback(async () => {
+        try {
+            const res = await api.get("/queue/summary/today");
+            setSummary(res.data);
+        } catch (err) {
+            console.error("Load summary error", err);
+        }
+    }, []);
+
+    const loadUpcomingAppointments = useCallback(async () => {
+        if (!agent?._id) return;
+        try {
+            const res = await api.get(`/appointments/agent/${agent._id}/upcoming`);
+            setAppointments(res.data);
+        } catch (err) {
+            console.error("Load upcoming appointments error", err);
+        }
+    }, [agent?._id]);
+
+    useEffect(() => { loadAgent(); }, []);
+
+    useEffect(() => {
+        if (!agent?._id) return;
+        loadQueue();
+        loadSummary();
+        loadUpcomingAppointments();
+
+        const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:5000", {
+            transports: ["websocket"]
+        });
+        socket.on("connect", () => { });
+        // Listen for both new and legacy queue update events
+        socket.on("queue.updated", () => { loadQueue(); loadSummary(); });
+        socket.on("queueUpdated", () => { loadQueue(); loadSummary(); });
+
+        return () => { socket.disconnect(); };
+    }, [agent?._id]);
+
+    async function updateAvgTime() {
+        try {
+            await api.put("/agents/update-session-duration", { avgTime: Number(avgTime) });
+            setAgent((prev: any) => ({ ...prev, avgSessionDuration: Number(avgTime) }));
+            showMsg("Average Session Duration Updated!");
+        } catch (err) { console.error(err); }
+    }
+
+    async function changeAvailability(state: string) {
+        try {
+            await api.put("/agents/availability", {
+                availability: state,
+                statusMessage: state === "Unavailable" ? statusMessage : ""
+            });
+            setAgent((prev: any) => ({
+                ...prev,
+                availability: state,
+                statusMessage: state === "Unavailable" ? statusMessage : ""
+            }));
+            if (state === "Available") setStatusMessage("");
+            showMsg(`Availability changed to: ${state}`);
+        } catch (err) { console.error(err); }
+    }
+
+    async function prioritiseClient(clientId: string) {
+        try {
+            await api.put(`/queue/prioritise/${clientId}`);
+            showMsg("Client moved to top of queue");
+            loadQueue();
+        } catch (err) {
+            showMsg("Error prioritising client");
+        }
+    }
+
+    async function handleCompleteClient() {
+        if (!completingClient) return;
+        try {
+            await api.put(`/queue/complete/${completingClient._id}`, {
+                nextVisitDate: nextVisitDate || null
+            });
+            setCompletingClient(null);
+            setNextVisitDate("");
+            loadQueue();
+            loadSummary();
+            showMsg("Client visit completed!");
+        } catch (err) { console.error(err); }
+    }
+
+    function showMsg(text: string) {
+        setMsg(text);
+        setTimeout(() => setMsg(""), 3000);
+    }
+
+    if (!agent) return <Loader />;
+
+    return (
+        <div className="w-full min-h-screen bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white transition-colors duration-300">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-8">
+                    <div className="w-12 h-12 bg-info-50 dark:bg-info-500/20 border border-info-200 dark:border-info-500/30 rounded-xl flex items-center justify-center shadow-sm">
+                        <User className="w-6 h-6 text-info-600 dark:text-info-400" />
+                    </div>
+                    <div>
+                        <h1 className="text-3xl md:text-4xl font-extrabold text-neutral-900 dark:text-white">Agent Dashboard</h1>
+                        <p className="text-neutral-500 dark:text-neutral-400 text-sm font-medium mt-0.5">{agent.name} — {agent.serviceCategory || agent.specialization}</p>
+                    </div>
+                </div>
+
+                {msg && (
+                    <div className="mb-6 p-4 rounded-xl bg-brand-50 border border-brand-200 text-brand-700 dark:bg-brand-500/10 dark:border-brand-500/30 dark:text-brand-400 font-semibold animate-fade-up flex items-center gap-2 text-sm shadow-sm">
+                        <CheckCircle className="w-4 h-4" /> {msg}
+                    </div>
+                )}
+
+                {/* Today's Summary — 4 stat cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                    {[
+                        {
+                            label: "Served Today", value: summary?.completed ?? "–",
+                            icon: <CheckCircle className="w-6 h-6 text-success-500" />,
+                            color: "bg-success-50 dark:bg-success-500/10 border-success-200 dark:border-success-500/20 text-success-700 dark:text-success-400"
+                        },
+                        {
+                            label: "Still Waiting", value: summary?.waiting ?? "–",
+                            icon: <Users className="w-6 h-6 text-brand-500" />,
+                            color: "bg-brand-50 dark:bg-brand-500/10 border-brand-200 dark:border-brand-500/20 text-brand-700 dark:text-brand-400"
+                        },
+                        {
+                            label: "Avg. Session", value: summary?.avgConsultTime ? `${summary.avgConsultTime}m` : "–",
+                            icon: <Clock className="w-6 h-6 text-info-500" />,
+                            color: "bg-info-50 dark:bg-info-500/10 border-info-200 dark:border-info-500/20 text-info-700 dark:text-info-400"
+                        },
+                        {
+                            label: "Busiest Hour", value: summary?.busiestHour ?? "–",
+                            icon: <TrendingUp className="w-6 h-6 text-warning-500" />,
+                            color: "bg-warning-50 dark:bg-warning-500/10 border-warning-200 dark:border-warning-500/20 text-warning-700 dark:text-warning-400"
+                        },
+                    ].map(({ label, value, icon, color }) => (
+                        <div key={label} className={`bg-white dark:bg-neutral-800 border rounded-2xl p-5 shadow-sm flex flex-col gap-2 transition-colors ${color}`}>
+                            <div className="flex items-center justify-between">
+                                {icon}
+                                <span className="text-2xl font-black">{value}</span>
+                            </div>
+                            <p className="text-[11px] uppercase tracking-wider font-bold text-neutral-500 dark:text-neutral-400 mt-1">{label}</p>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="grid lg:grid-cols-3 gap-6">
+
+                    {/* Settings column */}
+                    <div className="space-y-6">
+
+                        {/* Availability */}
+                        <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl p-6 shadow-sm">
+                            <div className="flex items-center gap-2 mb-4">
+                                <Settings className="w-5 h-5 text-brand-600 dark:text-brand-400" />
+                                <h3 className="text-lg font-bold text-neutral-900 dark:text-white">Queue Mode</h3>
+                            </div>
+                            <div className="flex gap-3 mb-4">
+                                <button
+                                    onClick={() => changeAvailability("Available")}
+                                    className={`flex-1 py-3 rounded-xl font-bold border transition-all text-sm shadow-sm ${agent.availability === "Available"
+                                        ? "border-success-300 dark:border-success-500/50 bg-success-50 dark:bg-success-500/10 text-success-700 dark:text-success-400"
+                                        : "border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-500 hover:border-success-300"}`}
+                                >
+                                    ✓ Available
+                                </button>
+                                <button
+                                    onClick={() => changeAvailability("Unavailable")}
+                                    className={`flex-1 py-3 rounded-xl font-bold border transition-all text-sm shadow-sm ${agent.availability === "Unavailable" || agent.availability === "Not Available"
+                                        ? "border-danger-300 dark:border-danger-500/50 bg-danger-50 dark:bg-danger-500/10 text-danger-700 dark:text-danger-400"
+                                        : "border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-neutral-500 hover:border-danger-300"}`}
+                                >
+                                    ⏸ Paused
+                                </button>
+                            </div>
+
+                            {(agent.availability === "Unavailable" || agent.availability === "Not Available") && (
+                                <div>
+                                    <label className="text-xs font-bold text-neutral-500 dark:text-neutral-400 mb-1.5 block">
+                                        Broadcast to Clients <span className="text-neutral-400">(optional)</span>
+                                    </label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            value={statusMessage}
+                                            onChange={(e) => setStatusMessage(e.target.value)}
+                                            placeholder="e.g. Back in 20 minutes"
+                                            maxLength={200}
+                                            className="flex-1 px-3 py-2 rounded-xl bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-400 focus:ring-2 focus:ring-brand-500/50 outline-none text-sm"
+                                        />
+                                        <button
+                                            onClick={() => changeAvailability("Unavailable")}
+                                            className="px-4 py-2 rounded-xl bg-danger-600 hover:bg-danger-700 text-white font-bold text-sm transition-all"
+                                        >
+                                            Send
+                                        </button>
+                                    </div>
+                                    {(agent.statusMessage || agent.pauseMessage) && (
+                                        <p className="mt-2 text-xs text-danger-600 dark:text-danger-400 font-semibold">
+                                            Broadcasting: &ldquo;{agent.statusMessage || agent.pauseMessage}&rdquo;
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Session Duration */}
+                        <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl p-6 shadow-sm">
+                            <div className="flex items-center gap-2 mb-4">
+                                <Clock className="w-5 h-5 text-brand-600 dark:text-brand-400" />
+                                <h3 className="text-lg font-bold text-neutral-900 dark:text-white">Session Duration</h3>
+                            </div>
+                            <div className="flex flex-col gap-3 p-4 bg-neutral-50 dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-700">
+                                <div className="flex items-baseline gap-1">
+                                    <span className="text-3xl font-black text-brand-600 dark:text-brand-400">{agent.avgSessionDuration || agent.avgConsultationTime || 5}</span>
+                                    <span className="text-sm font-bold text-neutral-400">min avg</span>
+                                </div>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="number" min="1"
+                                        value={avgTime}
+                                        onChange={(e) => setAvgTime(e.target.value)}
+                                        className="w-20 px-3 py-2 rounded-lg text-center font-bold text-neutral-900 dark:text-white bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 focus:ring-2 focus:ring-brand-500/50 outline-none text-sm"
+                                        placeholder="Mins"
+                                    />
+                                    <button
+                                        onClick={updateAvgTime}
+                                        className="flex-1 px-4 py-2 rounded-lg font-bold bg-brand-600 hover:bg-brand-700 dark:bg-brand-500 dark:hover:bg-brand-600 text-white shadow-md transition-all text-sm"
+                                    >
+                                        Update
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Profile info */}
+                        <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl p-6 shadow-sm">
+                            <div className="flex items-center gap-2 mb-4">
+                                <User className="w-5 h-5 text-brand-600 dark:text-brand-400" />
+                                <h3 className="text-lg font-bold text-neutral-900 dark:text-white">Profile</h3>
+                            </div>
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-3 bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 p-3 rounded-xl">
+                                    <Mail className="w-4 h-4 text-neutral-400" />
+                                    <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300 truncate">{agent.email}</span>
+                                </div>
+                                <div className="flex items-center justify-between bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 p-3 rounded-xl">
+                                    <div className="flex items-center gap-3">
+                                        <Activity className="w-4 h-4 text-neutral-400" />
+                                        <span className="text-sm font-bold text-neutral-700 dark:text-neutral-300">Status</span>
+                                    </div>
+                                    <span className={`px-2.5 py-1 text-[10px] uppercase tracking-widest font-black rounded-md border ${agent.availability === "Available"
+                                        ? "bg-success-100 dark:bg-success-500/20 text-success-700 dark:text-success-400 border-success-200 dark:border-success-500/30"
+                                        : "bg-danger-100 dark:bg-danger-500/20 text-danger-700 dark:text-danger-400 border-danger-200 dark:border-danger-500/30"}`}>
+                                        {agent.availability || "Available"}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Live Queue */}
+                    <div className="lg:col-span-2">
+                        <div className="bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl p-6 shadow-sm min-h-[400px]">
+                            <div className="flex items-center justify-between mb-6 pb-4 border-b border-neutral-200 dark:border-neutral-700">
+                                <div className="flex items-center gap-2">
+                                    <Activity className="w-5 h-5 text-brand-500 animate-pulse" />
+                                    <h3 className="text-lg font-bold text-neutral-900 dark:text-white">My Live Queue</h3>
+                                    <span className="px-2.5 py-0.5 text-xs font-black bg-brand-100 dark:bg-brand-500/20 text-brand-700 dark:text-brand-400 rounded-full">
+                                        {queue.length} waiting
+                                    </span>
+                                </div>
+                            </div>
+
+                            {queue.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center h-64 text-center">
+                                    <div className="w-20 h-20 bg-neutral-100 dark:bg-neutral-900 rounded-3xl flex items-center justify-center mb-4 border border-neutral-200 dark:border-neutral-800">
+                                        <Calendar className="w-10 h-10 text-neutral-300 dark:text-neutral-600" />
+                                    </div>
+                                    <h4 className="text-lg font-bold text-neutral-600 dark:text-neutral-300">Queue is Clear</h4>
+                                    <p className="text-neutral-500 text-sm mt-1">No clients waiting right now.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {queue.map((p: any, idx: number) => (
+                                        <div
+                                            key={p._id}
+                                            className={`flex items-center gap-4 p-4 rounded-2xl border transition-all ${idx === 0
+                                                ? "bg-brand-50 dark:bg-brand-500/10 border-brand-200 dark:border-brand-500/30"
+                                                : "bg-neutral-50 dark:bg-neutral-900 border-neutral-200 dark:border-neutral-700 hover:border-brand-200 dark:hover:border-brand-500/30"}`}
+                                        >
+                                            {/* Token badge */}
+                                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-lg flex-shrink-0 ${idx === 0
+                                                ? "bg-brand-600 dark:bg-brand-500 text-white shadow-md"
+                                                : "bg-neutral-200 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300"}`}>
+                                                {p.tokenNumber}
+                                            </div>
+
+                                            {/* Client info */}
+                                            <div className="flex-1 min-w-0">
+                                                <p className="font-bold text-neutral-900 dark:text-white truncate">{p.clientName || p.name}</p>
+                                                <div className="flex items-center gap-2 mt-0.5">
+                                                    <span className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">
+                                                        ~{p.estimatedWait ?? (idx * (agent.avgSessionDuration || agent.avgConsultationTime || 5))} min wait
+                                                    </span>
+                                                    {p.notes && (
+                                                        <span className="px-2 py-0.5 bg-info-50 dark:bg-info-900/20 border border-info-200 dark:border-info-500/30 text-info-700 dark:text-info-400 rounded text-[10px] font-semibold truncate max-w-[140px]">
+                                                            📋 {p.notes}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Actions */}
+                                            <div className="flex items-center gap-2 flex-shrink-0">
+                                                {idx > 0 && (
+                                                    <button
+                                                        onClick={() => prioritiseClient(p._id)}
+                                                        title="Move to top"
+                                                        className="p-2 rounded-lg border border-warning-200 dark:border-warning-500/30 bg-warning-50 dark:bg-warning-500/10 hover:bg-warning-100 dark:hover:bg-warning-500/20 text-warning-600 dark:text-warning-400 transition-colors"
+                                                    >
+                                                        <ArrowUp className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                                {idx === 0 && (
+                                                    <button
+                                                        onClick={() => {
+                                                            setCompletingClient(p);
+                                                            setNextVisitDate("");
+                                                        }}
+                                                        title="Mark as served"
+                                                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-success-200 dark:border-success-500/30 bg-success-50 dark:bg-success-500/10 hover:bg-success-100 dark:hover:bg-success-500/20 text-success-700 dark:text-success-400 font-bold text-xs transition-colors"
+                                                    >
+                                                        <CheckCircle className="w-4 h-4" />
+                                                        Done
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Upcoming Appointments */}
+                <div className="mt-6 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-5 pb-4 border-b border-neutral-200 dark:border-neutral-700">
+                        <div className="flex items-center gap-2">
+                            <Calendar className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                            <h3 className="text-lg font-bold text-neutral-900 dark:text-white">My Upcoming Appointments</h3>
+                            <span className="px-2.5 py-0.5 text-xs font-black bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-400 rounded-full">
+                                {appointments.length} in next 7 days
+                            </span>
+                        </div>
+                        <button
+                            onClick={loadUpcomingAppointments}
+                            className="p-2 bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors text-neutral-600 dark:text-neutral-400 group"
+                        >
+                            <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
+                        </button>
+                    </div>
+
+                    {appointments.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-10 text-center">
+                            <div className="w-16 h-16 bg-neutral-100 dark:bg-neutral-900 rounded-2xl flex items-center justify-center mb-3 border border-neutral-200 dark:border-neutral-800">
+                                <Calendar className="w-8 h-8 text-neutral-300 dark:text-neutral-600" />
+                            </div>
+                            <p className="text-sm font-bold text-neutral-500 dark:text-neutral-400">No upcoming appointments in the next 7 days</p>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto custom-scrollbar">
+                            <table className="w-full text-left border-collapse text-sm">
+                                <thead>
+                                    <tr className="bg-neutral-100 dark:bg-neutral-800/50 text-neutral-500 dark:text-neutral-400 text-xs uppercase tracking-wider">
+                                        <th className="p-3 font-bold rounded-tl-xl">Date</th>
+                                        <th className="p-3 font-bold">Time</th>
+                                        <th className="p-3 font-bold">Client</th>
+                                        <th className="p-3 font-bold hidden sm:table-cell">Phone</th>
+                                        <th className="p-3 font-bold hidden md:table-cell">Notes</th>
+                                        <th className="p-3 font-bold rounded-tr-xl">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-neutral-200 dark:divide-neutral-700/50">
+                                    {appointments.map((appt: any) => {
+                                        const dt = new Date(appt.scheduledAt);
+                                        return (
+                                            <tr key={appt._id} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/30 transition-colors">
+                                                <td className="p-3">
+                                                    <span className="font-bold text-neutral-700 dark:text-neutral-300">
+                                                        {dt.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3">
+                                                    <span className="font-bold text-neutral-900 dark:text-white bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs">
+                                                        {dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3">
+                                                    <p className="font-bold text-neutral-900 dark:text-white">{appt.clientName || appt.patientName}</p>
+                                                </td>
+                                                <td className="p-3 hidden sm:table-cell">
+                                                    <div className="flex items-center gap-1.5 text-neutral-500 dark:text-neutral-400 text-xs font-medium">
+                                                        <Smartphone className="w-3 h-3" />
+                                                        {appt.clientPhone || appt.phone || '—'}
+                                                    </div>
+                                                </td>
+                                                <td className="p-3 hidden md:table-cell">
+                                                    {appt.notes ? (
+                                                        <span className="px-2 py-0.5 bg-info-50 dark:bg-info-900/20 border border-info-200 dark:border-info-500/30 text-info-700 dark:text-info-400 rounded text-[10px] font-semibold">
+                                                            {appt.notes}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-neutral-400 text-xs">—</span>
+                                                    )}
+                                                </td>
+                                                <td className="p-3">
+                                                    <span className={`px-2.5 py-1 text-[10px] uppercase tracking-widest font-black rounded-md border ${appt.status === 'arrived'
+                                                            ? 'bg-success-50 border-success-200 text-success-700 dark:bg-success-500/20 dark:border-success-500/30 dark:text-success-400'
+                                                            : 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-500/20 dark:border-indigo-500/30 dark:text-indigo-400'
+                                                        }`}>
+                                                        {appt.status}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Complete Visit Modal */}
+            {completingClient && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+                    <div className="bg-white dark:bg-neutral-900 w-full max-w-md rounded-3xl shadow-2xl border border-neutral-200 dark:border-neutral-800 overflow-hidden">
+                        <div className="px-6 py-5 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center bg-neutral-50 dark:bg-neutral-900/50">
+                            <div>
+                                <h2 className="text-xl font-bold text-neutral-900 dark:text-white">Complete Visit</h2>
+                                <p className="text-sm font-medium text-brand-600 dark:text-brand-400">{completingClient.clientName || completingClient.name}</p>
+                            </div>
+                            <button onClick={() => setCompletingClient(null)} className="p-2 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-full transition-colors text-neutral-500">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-6">
+                            <label className="text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-2 block">
+                                Set Return Date <span className="text-neutral-400 font-normal">(Optional)</span>
+                            </label>
+                            <input
+                                type="date"
+                                min={new Date().toISOString().split('T')[0]}
+                                value={nextVisitDate}
+                                onChange={(e) => setNextVisitDate(e.target.value)}
+                                className="w-full px-4 py-3 rounded-xl bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white focus:ring-2 focus:ring-brand-500/50 outline-none transition-all"
+                            />
+                            <p className="text-xs text-neutral-500 mt-2">
+                                If set, the client will receive an automated reminder one day before this date.
+                            </p>
+                        </div>
+
+                        <div className="px-6 py-4 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 flex justify-end gap-3">
+                            <button
+                                onClick={() => setCompletingClient(null)}
+                                className="px-5 py-2.5 rounded-xl text-sm font-bold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleCompleteClient}
+                                className="px-6 py-2.5 rounded-xl text-sm font-bold bg-success-600 hover:bg-success-700 text-white shadow-md transition-all active:scale-95 flex items-center gap-2"
+                            >
+                                <CheckCircle className="w-4 h-4" /> Finalize
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

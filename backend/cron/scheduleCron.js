@@ -2,45 +2,62 @@ const cron = require('node-cron');
 const User = require('../models/User');
 const logger = require('../utils/logger');
 
-// Run every 15 minutes
+// Run every 15 minutes — auto-updates agent availability based on their schedule
 const initScheduleCron = () => {
-    logger.info("Initializing Doctor Schedule Cron Job (Runs every 15m)");
+    logger.info("Initializing Agent Schedule Cron Job (Runs every 15m)");
 
     cron.schedule('*/15 * * * *', async () => {
         try {
-            const doctors = await User.find({ role: 'DOCTOR', "schedule.0": { $exists: true } });
+            // Include both new role (AGENT) and legacy role (DOCTOR) for backward compat
+            const agents = await User.find({
+                role:          { $in: ['AGENT', 'DOCTOR'] },
+                "schedule.0": { $exists: true }
+            });
 
             const now = new Date();
             const currentDayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-            const currentDay = currentDayNames[now.getDay()];
-
-            // Format current time as HH:MM
+            const currentDay  = currentDayNames[now.getDay()];
             const currentHour = now.getHours().toString().padStart(2, '0');
-            const currentMin = now.getMinutes().toString().padStart(2, '0');
+            const currentMin  = now.getMinutes().toString().padStart(2, '0');
             const currentTime = `${currentHour}:${currentMin}`;
 
-            for (const doc of doctors) {
-                // Find today's schedule
-                const todaySchedule = doc.schedule.find(s => s.day === currentDay);
-
+            for (const agent of agents) {
+                const todaySchedule = agent.schedule.find(s => s.day === currentDay);
                 let shouldBeAvailable = false;
 
-                if (todaySchedule && todaySchedule.startTime && todaySchedule.endTime) {
+                if (todaySchedule?.startTime && todaySchedule?.endTime) {
                     if (currentTime >= todaySchedule.startTime && currentTime <= todaySchedule.endTime) {
                         shouldBeAvailable = true;
                     }
                 }
 
-                const desiredStatus = shouldBeAvailable ? "Available" : "Not Available";
+                // New enum value is "Unavailable"; keep "Not Available" for legacy records
+                const desiredStatus = shouldBeAvailable ? "Available" : "Unavailable";
+                const legacyDesired = shouldBeAvailable ? "Available" : "Not Available";
 
-                if (doc.availability !== desiredStatus && doc.availability !== "On Break") {
-                    doc.availability = desiredStatus;
-                    await doc.save();
-                    logger.info(`Cron: Updated Dr. ${doc.name} availability to ${desiredStatus}`);
+                const isAlreadyCorrect =
+                    agent.availability === desiredStatus ||
+                    agent.availability === legacyDesired;
 
-                    // Fire socket event if available
-                    // This is optional since they will see it when they log in 
-                    // and patients will naturally just be blocked if Not Available
+                const isOnBreak = agent.availability === "Break" || agent.availability === "On Break";
+
+                if (!isAlreadyCorrect && !isOnBreak) {
+                    agent.availability = desiredStatus;
+                    await agent.save();
+                    logger.info(`Cron: Updated agent ${agent.name} availability to ${desiredStatus}`);
+
+                    if (global.io) {
+                        global.io.to(`agent_${agent._id}`).emit("agent.status_changed", {
+                            agentId:      agent._id,
+                            availability: desiredStatus
+                        });
+                        if (agent.organizationId) {
+                            global.io.to(`org_${agent.organizationId}`).emit("agent.status_changed", {
+                                agentId:      agent._id,
+                                availability: desiredStatus
+                            });
+                        }
+                    }
                 }
             }
         } catch (err) {

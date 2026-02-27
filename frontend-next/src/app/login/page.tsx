@@ -17,7 +17,7 @@ export default function StaffLogin() {
         if (typeof window !== "undefined") {
             const params = new URLSearchParams(window.location.search);
             const error = params.get("error");
-            if (error === "not_registered") setMsg("Your Google account is not registered. Doctors and Receptionists must use their admin-registered email.");
+            if (error === "not_registered") setMsg("Your Google account is not registered. Agents and Operators must use their admin-registered email.");
             if (error === "oauth_error") setMsg("Google sign-in failed. Please try again.");
         }
     }, []);
@@ -32,16 +32,16 @@ export default function StaffLogin() {
         try {
             const res = await api.post("/auth/login", form);
             const { id, role } = res.data.user;
-            localStorage.setItem("doctorId", id);
+            localStorage.setItem("userId", id);
             localStorage.setItem("role", role);
 
             setMsg("Login Successful 🎉 Redirecting...");
             setTimeout(() => {
-                if (role === "DOCTOR") {
-                    router.push("/doctor");
-                } else if (role === "RECEPTIONIST") {
-                    router.push("/reception");
-                } else if (role === "HOSPITAL_ADMIN") {
+                if (role === "AGENT" || role === "DOCTOR") {
+                    router.push("/agent");
+                } else if (role === "OPERATOR" || role === "RECEPTIONIST") {
+                    router.push("/operator");
+                } else if (role === "ORG_ADMIN" || role === "HOSPITAL_ADMIN") {
                     router.push("/admin/dashboard");
                 } else {
                     router.push("/");
@@ -73,7 +73,7 @@ export default function StaffLogin() {
                             Welcome Back
                         </h2>
                         <p className="text-neutral-500 dark:text-neutral-400 text-sm font-medium">
-                            Log in to your clinical dashboard.
+                            Log in to your work dashboard.
                         </p>
                     </div>
 
@@ -89,7 +89,7 @@ export default function StaffLogin() {
                             <input
                                 name="email"
                                 type="email"
-                                placeholder="you@hospital.com"
+                                placeholder="you@organization.com"
                                 value={form.email}
                                 onChange={handleChange}
                                 className="w-full p-3.5 rounded-xl bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white placeholder-neutral-400 dark:placeholder-neutral-500 focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 outline-none transition-all shadow-sm"
@@ -140,7 +140,7 @@ export default function StaffLogin() {
                         </svg>
                         Continue with Google
                     </a>
-                    <p className="text-xs text-neutral-400 dark:text-neutral-500 text-center mt-2">Doctors &amp; Receptionists can sign in with their registered Google email</p>
+                    <p className="text-xs text-neutral-400 dark:text-neutral-500 text-center mt-2">Agents &amp; Operators can sign in with their registered Google email</p>
 
                     <div className="mt-6 text-center md:text-left">
                         <Link
@@ -153,7 +153,7 @@ export default function StaffLogin() {
 
                     <div className="mt-8 pt-6 border-t border-neutral-200 dark:border-neutral-800 text-center md:text-left">
                         <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
-                            Don’t have a clinical account?{" "}
+                            Don't have an account?{" "}
                             <Link className="text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300 font-bold transition-colors" href="/signup">
                                 Sign up here
                             </Link>
@@ -180,10 +180,10 @@ export default function StaffLogin() {
                 {/* Large Marketing Copy */}
                 <div className="relative z-10 max-w-lg mt-auto mb-auto">
                     <h1 className="text-3xl lg:text-4xl font-extrabold leading-tight mb-6">
-                        Streamline your hospital patient flow.
+                        Streamline your organization's queue flow.
                     </h1>
                     <p className="text-blue-100 dark:text-neutral-300 text-lg mb-10 leading-relaxed font-medium">
-                        SmartQueue provides a unified dashboard for doctors, receptionists, and admins to manage wait times, track patient statuses, and improve overall clinic efficiency.
+                        SmartQueue provides a unified dashboard for agents, operators, and admins to manage wait times, track client statuses, and improve overall service efficiency.
                     </p>
 
                     {/* Feature list */}
@@ -203,7 +203,7 @@ export default function StaffLogin() {
                                 <Users strokeWidth={2.5} className="w-5 h-5" />
                             </div>
                             <div>
-                                <h4 className="font-bold text-white text-sm">Patient Predictions</h4>
+                                <h4 className="font-bold text-white text-sm">Queue Predictions</h4>
                                 <p className="text-xs text-brand-100/70 dark:text-neutral-400 font-medium">Smart AI algorithms calculate precise ETA</p>
                             </div>
                         </div>
@@ -214,7 +214,7 @@ export default function StaffLogin() {
                             </div>
                             <div>
                                 <h4 className="font-bold text-white text-sm">Role-Based Access</h4>
-                                <p className="text-xs text-brand-100/70 dark:text-neutral-400 font-medium">Secure dashboards for Doctors & Admins</p>
+                                <p className="text-xs text-brand-100/70 dark:text-neutral-400 font-medium">Secure dashboards for Agents &amp; Admins</p>
                             </div>
                         </div>
                     </div>
@@ -222,7 +222,7 @@ export default function StaffLogin() {
 
                 {/* Footer Copyright */}
                 <div className="relative z-10 text-xs text-white/50 font-medium mt-12 pb-4">
-                    © 2026 SmartQueue Hospital Management. All rights reserved.
+                    © 2026 SmartQueue Platform. All rights reserved.
                 </div>
             </div>
         </div>

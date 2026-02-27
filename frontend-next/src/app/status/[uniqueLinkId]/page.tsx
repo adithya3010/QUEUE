@@ -60,7 +60,8 @@ export default function PatientStatusView() {
             }
 
             socket.connect();
-            socket.emit("joinDoctorPublicRoom", res.data.doctorId);
+            const agentId = res.data.agentId || res.data.doctorId;
+            if (agentId) socket.emit("joinDoctorPublicRoom", agentId);
         } catch (err) {
             console.log(err);
         } finally {
@@ -74,21 +75,36 @@ export default function PatientStatusView() {
 
         socket.connect();
         socket.emit("joinPatientRoom", uniqueLinkId);
+        socket.emit("joinClientRoom", uniqueLinkId);
 
+        // Listen for both new event names and legacy event names for backward compat
         socket.on("visitCompleted", () => setCompleted(true));
+        socket.on("queue.completed", () => setCompleted(true));
         socket.on("visitCancelled", () => setCancelled(true));
+        socket.on("queue.cancelled", () => setCancelled(true));
         socket.on("queueUpdated", loadStatus);
+        socket.on("queue.updated", loadStatus);
 
         socket.on("doctorAvailabilityChanged", status => {
             setDoctorStatus(status);
             if (status === "Available") loadStatus();
         });
+        socket.on("agent.status_changed", ({ availability }) => {
+            if (availability) {
+                setDoctorStatus(availability);
+                if (availability === "Available") loadStatus();
+            }
+        });
 
         return () => {
             socket.off("visitCompleted");
+            socket.off("queue.completed");
             socket.off("visitCancelled");
+            socket.off("queue.cancelled");
             socket.off("queueUpdated");
+            socket.off("queue.updated");
             socket.off("doctorAvailabilityChanged");
+            socket.off("agent.status_changed");
         };
     }, [uniqueLinkId]);
 
@@ -244,7 +260,7 @@ export default function PatientStatusView() {
                 {doctorStatus !== "Available" && (
                     <div className="mt-6 bg-amber-500/10 border border-amber-500/20 text-amber-400 p-4 rounded-2xl flex items-center gap-3 shadow-inner">
                         <AlertTriangle className="w-6 h-6 shrink-0" />
-                        <p className="font-semibold text-sm">Doctor is {doctorStatus}. Queue is currently paused.</p>
+                        <p className="font-semibold text-sm">Agent is {doctorStatus}. Queue is currently paused.</p>
                     </div>
                 )}
 
@@ -279,7 +295,7 @@ export default function PatientStatusView() {
                                         ? "bg-primary-500/20 border-l-4 border-primary-400 font-bold"
                                         : "border-b border-white/5 last:border-0 hover:bg-white/5"}`}>
                                 <span className={`font-semibold ${p.isMe ? "text-white" : "text-gray-300"}`}>
-                                    #{p.tokenNumber} <span className="text-gray-600 mx-2 font-normal text-sm">|</span> <span className="text-sm">{p.isMe ? "You" : "Patient"}</span>
+                                    #{p.tokenNumber} <span className="text-gray-600 mx-2 font-normal text-sm">|</span> <span className="text-sm">{p.isMe ? "You" : "Client"}</span>
                                 </span>
                                 <span className={`px-2.5 py-1 rounded-md text-xs font-bold shadow-inner ${p.isMe ? "bg-primary-500 text-white shadow-[0_0_10px_rgba(59,130,246,0.5)]" : "bg-black/40 border border-white/5 text-gray-400"}`}>
                                     Pos: {p.position}

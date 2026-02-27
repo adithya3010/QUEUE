@@ -4,15 +4,15 @@ const Webhook = require('../models/Webhook');
 
 /**
  * Dispatches an outbound webhook event securely using HMAC SHA-256 signatures.
- * @param {ObjectId} hospitalId 
- * @param {String} event ("queue.created", "queue.updated", etc)
+ * @param {ObjectId} organizationId
+ * @param {String} event ("queue.created", "queue.updated", "agent.status_changed", etc)
  * @param {Object} payload The JSON object to send
  */
-const dispatchWebhook = async (hospitalId, event, payload) => {
+const dispatchWebhook = async (organizationId, event, payload) => {
     try {
-        // Find all active subscriptions for this hospital to this event
+        // Find all active subscriptions for this organization to this event
         const endpoints = await Webhook.find({
-            hospitalId,
+            organizationId,
             isActive: true,
             events: { $in: [event] }
         });

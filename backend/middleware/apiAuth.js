@@ -51,9 +51,9 @@ const requireApiKey = async (req, res, next) => {
             });
         }
 
-        const keyRecord = await ApiKey.findOne({ _id: keyId, status: 'Active' }).populate('hospitalId');
+        const keyRecord = await ApiKey.findOne({ _id: keyId, status: 'Active' }).populate('organizationId');
 
-        if (!keyRecord || keyRecord.hospitalId.status !== 'Active') {
+        if (!keyRecord || keyRecord.organizationId.status !== 'Active') {
             return res.status(401).json({
                 success: false,
                 error: 'Unauthorized',
@@ -77,18 +77,20 @@ const requireApiKey = async (req, res, next) => {
 
         // Rate Limiting & Usage Tracking Logic
         const planLimits = {
-            "Basic": 1000,
-            "Pro": 10000,
-            "Enterprise": Infinity
+            "Starter":    1000,
+            "Growth":     10000,
+            "Enterprise": Infinity,
+            "Basic":      1000,    // backward compat
+            "Pro":        10000    // backward compat
         };
-        const hospitalPlan = keyRecord.hospitalId.subscriptionPlan || "Basic";
-        const maxLimit = planLimits[hospitalPlan] || 1000;
+        const orgPlan  = keyRecord.organizationId.subscriptionPlan || "Starter";
+        const maxLimit = planLimits[orgPlan] || 1000;
 
         const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
 
         // Atomic increment (upserts if not exists)
         const usageRecord = await ApiUsage.findOneAndUpdate(
-            { hospitalId: keyRecord.hospitalId._id, yearMonth: currentMonth },
+            { organizationId: keyRecord.organizationId._id, yearMonth: currentMonth },
             { $inc: { requestCount: 1 } },
             { new: true, upsert: true }
         );
@@ -97,12 +99,13 @@ const requireApiKey = async (req, res, next) => {
             return res.status(429).json({
                 success: false,
                 error: 'Quota Exceeded',
-                message: `Monthly API quota of ${maxLimit} requests for ${hospitalPlan} plan exceeded.`
+                message: `Monthly API quota of ${maxLimit} requests for ${orgPlan} plan exceeded.`
             });
         }
 
-        req.hospital = keyRecord.hospitalId;
-        req.apiKey = keyRecord;
+        req.organization = keyRecord.organizationId;   // new primary accessor
+        req.hospital     = keyRecord.organizationId;   // backward compat alias kept for v1 controller
+        req.apiKey       = keyRecord;
 
         next();
     } catch (err) {

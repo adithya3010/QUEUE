@@ -41,23 +41,23 @@ function formatTimeStr(date) {
 }
 
 /**
- * Generate available time slots for a doctor on a given date.
+ * Generate available time slots for an agent on a given date.
  *
- * @param {Object} doctor - User document with schedule[] and avgConsultationTime
+ * @param {Object} agent - User document with schedule[] and avgSessionDuration
  * @param {string} dateStr - Date in "YYYY-MM-DD" format
  * @param {string[]} bookedSlots - Already booked "HH:MM" slots for that day
  * @returns {{ time: string, label: string }[]} - Available slots
  */
-function generateSlots(doctor, dateStr, bookedSlots = []) {
+function generateSlots(agent, dateStr, bookedSlots = []) {
     const dayName = getDayName(dateStr);
 
-    // Default schedule if doctor hasn't configured their hours
+    // Default schedule if agent hasn't configured their hours
     const DEFAULT_SCHEDULE = [
         "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
     ].map(day => ({ day, startTime: "09:00", endTime: "17:00" }));
 
-    const scheduleList = (doctor.schedule && doctor.schedule.length > 0)
-        ? doctor.schedule
+    const scheduleList = (agent.schedule && agent.schedule.length > 0)
+        ? agent.schedule
         : DEFAULT_SCHEDULE;
 
     const schedule = scheduleList.find(s => s.day === dayName);
@@ -66,7 +66,8 @@ function generateSlots(doctor, dateStr, bookedSlots = []) {
         return []; // Doctor not working that day (e.g. Sunday)
     }
 
-    const stepMins = doctor.avgConsultationTime || 10;
+    // Support both new field name (avgSessionDuration) and legacy (avgConsultationTime)
+    const stepMins = agent.avgSessionDuration || agent.avgConsultationTime || 10;
     const now = new Date();
     const slots = [];
 

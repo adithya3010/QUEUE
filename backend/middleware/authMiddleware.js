@@ -4,23 +4,22 @@ const User = require("../models/User");
 // Middleware to check if user is logged in
 const auth = async (req, res, next) => {
   try {
-    const token = req.cookies.token;
+    const token = req.cookies.token
+      || req.header('Authorization')?.replace('Bearer ', '');
+
     if (!token) {
       return res.status(401).json({ message: "Not authenticated" });
     }
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "secretkey"
-    );
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "secretkey");
 
     req.user = {
-      id: decoded.userId,
-      role: decoded.role,
-      hospitalId: decoded.hospitalId
+      id:             decoded.userId,
+      role:           decoded.role,
+      organizationId: decoded.organizationId || decoded.hospitalId  // support legacy tokens
     };
 
-    // For backwards compatibility where endpoints exclusively look for req.doctorId
-    req.doctorId = decoded.role === "DOCTOR" ? decoded.userId : null;
+    // Convenience shorthand for AGENT role (was: req.doctorId for DOCTOR)
+    req.agentId = decoded.role === "AGENT" ? decoded.userId : null;
 
     next();
   } catch (err) {
@@ -43,7 +42,4 @@ const requireRole = (...allowedRoles) => {
   };
 };
 
-module.exports = {
-  auth,
-  requireRole
-};
+module.exports = { auth, requireRole };

@@ -1,15 +1,14 @@
-const cron = require('node-cron');
-const Patient = require('../models/Patient');
-const logger = require('../utils/logger');
+const cron        = require('node-cron');
+const Appointment = require('../models/Appointment');
+const logger      = require('../utils/logger');
 const { sendReturnVisitReminder } = require('../utils/notificationService');
 
-// Run daily at 9:00 AM
+// Run daily at 9:00 AM — sends reminders for appointments scheduled for tomorrow
 const initReminderCron = () => {
-    logger.info("Initializing Return Visit Reminder Cron Job (Runs daily at 9:00 AM)");
+    logger.info("Initializing Appointment Reminder Cron Job (Runs daily at 9:00 AM)");
 
     cron.schedule('0 9 * * *', async () => {
         try {
-            // Find patients whose nextVisitDate is tomorrow
             const tomorrow = new Date();
             tomorrow.setDate(tomorrow.getDate() + 1);
             tomorrow.setHours(0, 0, 0, 0);
@@ -17,22 +16,20 @@ const initReminderCron = () => {
             const dayAfterTomorrow = new Date(tomorrow);
             dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
 
-            const patientsDue = await Patient.find({
-                nextVisitDate: {
-                    $gte: tomorrow,
-                    $lt: dayAfterTomorrow
-                }
-            }).populate('doctorId', 'name');
+            const appointments = await Appointment.find({
+                scheduledAt: { $gte: tomorrow, $lt: dayAfterTomorrow },
+                status:      "scheduled"
+            }).populate('agentId', 'name');
 
-            if (patientsDue.length > 0) {
-                logger.info(`Found ${patientsDue.length} patients with return visits tomorrow.`);
-                for (const patient of patientsDue) {
-                    if (patient.number && patient.doctorId) {
+            if (appointments.length > 0) {
+                logger.info(`Found ${appointments.length} appointments for tomorrow.`);
+                for (const appt of appointments) {
+                    if (appt.clientPhone && appt.agentId) {
                         await sendReturnVisitReminder(
-                            patient.number,
-                            patient.name,
-                            patient.doctorId.name,
-                            patient.nextVisitDate
+                            appt.clientPhone,
+                            appt.clientName,
+                            appt.agentId.name,
+                            appt.scheduledAt
                         );
                     }
                 }

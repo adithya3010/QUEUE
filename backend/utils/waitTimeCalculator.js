@@ -1,45 +1,46 @@
 /**
- * Calculates estimated waiting times for patients in queue
+ * Calculates estimated waiting times for queue entries.
  * Based on:
  *  - queue position
- *  - doctor's avg consultation time (minutes)
- *  - doctor availability state
+ *  - agent's avg session duration (minutes)
+ *  - agent availability state
  */
 
-function calculateWaitTimes(queue, doctor) {
-  const avgTime = doctor?.avgConsultationTime || 8; // default 8 mins
-  const availability = doctor?.availability || "Available";
+function calculateWaitTimes(queue, agent) {
+  // Support both new field name (avgSessionDuration) and legacy (avgConsultationTime)
+  const avgTime      = agent?.avgSessionDuration || agent?.avgConsultationTime || 8;
+  const availability = agent?.availability || "Available";
 
-  return queue.map((patient, index) => {
-    // if doctor unavailable - show unknown wait time
-    if (availability === "Not Available") {
+  return queue.map((entry, index) => {
+    // "Unavailable" is the new value; keep "Not Available" check for legacy data
+    if (availability === "Unavailable" || availability === "Not Available") {
       return {
-        ...patient.toObject(),
+        ...entry.toObject(),
         waitMinutes: null,
-        etaTime: null,
-        message: "Doctor is currently unavailable"
+        etaTime:     null,
+        message:     "Agent is currently unavailable"
       };
     }
 
-    // if doctor on break
+    // Agent on break
     if (availability === "Break") {
       return {
-        ...patient.toObject(),
+        ...entry.toObject(),
         waitMinutes: null,
-        etaTime: null,
-        message: "Doctor is on break – please wait"
+        etaTime:     null,
+        message:     "Agent is on break – please wait"
       };
     }
 
     // Normal calculation
     const waitMinutes = index * avgTime;
-    const eta = new Date(Date.now() + waitMinutes * 60000);
+    const eta         = new Date(Date.now() + waitMinutes * 60000);
 
     return {
-      ...patient.toObject(),
+      ...entry.toObject(),
       waitMinutes,
-      etaTime: eta,
-      isTopThree: index < 3   // Top‑3 alert flag
+      etaTime:    eta,
+      isTopThree: index < 3
     };
   });
 }

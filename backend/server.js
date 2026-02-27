@@ -3,6 +3,7 @@ const http = require('http');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./config/swagger');
 const connectDB = require('./config/db');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
@@ -10,19 +11,16 @@ const helmet = require('helmet');
 const logger = require('./utils/logger');
 const { requestLogger, errorLogger } = require('./middleware/requestLogger');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
-const queueRoutes = require('./routes/queueRoutes');
-const doctorRoutes = require('./routes/doctorRoutes');
-const authRoutes = require('./routes/authRoutes');
-const apiV1Routes = require('./routes/apiV1Routes');
-const hospitalRoutes = require('./routes/hospitalRoutes');
-const adminRoutes = require('./routes/adminRoutes');
-const kioskRoutes = require('./routes/kioskRoutes');
-const appointmentRoutes = require('./routes/appointmentRoutes');
-const sentry = require('./config/sentry');
-const swaggerSpec = require('./config/swagger');
-
 const { initScheduleCron } = require('./cron/scheduleCron');
 const { initReminderCron } = require('./cron/reminderCron');
+const queueRoutes       = require('./routes/queueRoutes');
+const agentRoutes       = require('./routes/agentRoutes');
+const orgRoutes         = require('./routes/orgRoutes');
+const authRoutes        = require('./routes/authRoutes');
+const kioskRoutes       = require('./routes/kioskRoutes');
+const appointmentRoutes = require('./routes/appointmentRoutes');
+const apiV2Routes        = require('./routes/apiV2Routes');
+const sentry = require('./config/sentry');
 
 dotenv.config();
 connectDB();
@@ -88,17 +86,16 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Internal Legacy UI Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/doctors', doctorRoutes);
-app.use('/api/queue', queueRoutes);
+// ── Core routes ───────────────────────────────────────────────────────────────
+app.use('/api/auth',         authRoutes);
+app.use('/api/org',          orgRoutes);
+app.use('/api/agents',       agentRoutes);
+app.use('/api/queue',        queueRoutes);
 app.use('/api/appointments', appointmentRoutes);
-app.use('/api/hospitals', hospitalRoutes);
-app.use('/api/kiosk', kioskRoutes);
+app.use('/api/kiosk',        kioskRoutes);
 
-// B2B QaaS External Headless Routes
-app.use('/api/v1', apiV1Routes);
+// ── B2B External API ──────────────────────────────────────────────────────────
+app.use('/api/v2', apiV2Routes);
 
 // Error handling middleware (must be after all routes)
 app.use(notFoundHandler);

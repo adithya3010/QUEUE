@@ -74,7 +74,7 @@ PROVISIONED RESOURCES
       "schedule": [],
       "createdAt": "2026-02-27T09:27
       …(truncated)
-
+    }
 ----------------------------------------------------------------------
   SECTION 2 — Admin Staff  (/api/admin/staff/*)
 ----------------------------------------------------------------------
@@ -150,7 +150,8 @@ PROVISIONED RESOURCES
         "avgConsultationTime": 5,
         "a
       …(truncated)
-
+      }
+    ]
 ----------------------------------------------------------------------
   SECTION 3 — Setup: API Key + Doctor Login
 ----------------------------------------------------------------------
@@ -280,6 +281,7 @@ PROVISIONED RESOURCES
         "createdAt": "2026-02-27T09:27:51.289Z",
        
       …(truncated)
+      }]
 
 [PASS] GET /api/queue/status/c4ba0e48-5861-4ec0-8c7e-ff82498f17a3
   Name        : GET /queue/status/:uniqueLinkId — public patient status

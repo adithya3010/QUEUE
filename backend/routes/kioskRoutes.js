@@ -1,158 +1,255 @@
-const express = require("express");
-const router = express.Router();
-const User = require("../models/User");
-const Patient = require("../models/Patient");
+const express      = require("express");
+const router       = express.Router();
+const mongoose     = require("mongoose");
+const Organization = require("../models/Organization");
+const Service      = require("../models/Service");
+const User         = require("../models/User");
+const QueueEntry   = require("../models/QueueEntry");
 const { v4: uuidv4 } = require("uuid");
 const { sendQueueConfirmation } = require("../utils/notificationService");
+const logger = require("../utils/logger");
 
-router.get("/:hospitalId/doctors", async (req, res) => {
+// ─── Helper: resolve organization by slug or MongoDB ID ──────────────────────
+async function resolveOrg(slugOrId) {
+    if (mongoose.isValidObjectId(slugOrId)) {
+        const byId = await Organization.findById(slugOrId);
+        if (byId) return byId;
+    }
+    return Organization.findOne({ slug: slugOrId });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /kiosk/:slug/services
+// Returns active services for the organization with queue length + wait times
+// (Replaces: GET /kiosk/:hospitalId/doctors)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/:slug/services", async (req, res) => {
     try {
-        const { hospitalId } = req.params;
-        const doctors = await User.find({ hospitalId, role: "DOCTOR", availability: "Available" }).select('name specialization avgConsultationTime');
+        const org = await resolveOrg(req.params.slug);
+        if (!org) return res.status(404).json({ success: false, message: "Organization not found" });
 
-        const doctorsWithQueues = await Promise.all(doctors.map(async (doc) => {
-            const queueCount = await Patient.countDocuments({
-                doctorId: doc._id,
-                status: "waiting",
-            });
+        const services = await Service.find({ organizationId: org._id, isActive: true });
+
+        const servicesWithQueues = await Promise.all(services.map(async (svc) => {
+            const queueCount = await QueueEntry.countDocuments({ serviceId: svc._id, status: "waiting" });
             return {
-                _id: doc._id,
-                name: doc.name,
-                specialization: doc.specialization,
-                avgConsultationTime: doc.avgConsultationTime,
+                _id:                svc._id,
+                name:               svc.name,
+                description:        svc.description,
+                category:           svc.category,
+                avgSessionDuration: svc.avgSessionDuration,
                 currentQueueLength: queueCount,
-                estimatedWaitMins: queueCount * doc.avgConsultationTime
+                estimatedWaitMins:  queueCount * (svc.avgSessionDuration || 5)
             };
         }));
 
-        res.json({ success: true, data: doctorsWithQueues });
+        res.json({ success: true, organization: { id: org._id, name: org.name }, data: servicesWithQueues });
     } catch (err) {
-        console.error("Kiosk Doctor fetch error:", err);
+        logger.error("Kiosk Services fetch error", { error: err.message });
         res.status(500).json({ success: false, message: "Server Error" });
     }
 });
 
-// Kiosk: Create a new queue entry (Self check-in)
-router.post("/:hospitalId/enqueue", async (req, res) => {
+// Backward-compat alias: old /doctors path → new /services path
+router.get("/:slug/doctors", async (req, res) => {
     try {
-        const { hospitalId } = req.params;
-        const { doctorId, name, phone, description } = req.body;
+        const org = await resolveOrg(req.params.slug);
+        if (!org) return res.status(404).json({ success: false, message: "Organization not found" });
 
-        if (!doctorId || !name) {
-            return res.status(400).json({ message: "Doctor and Name are required" });
+        // Return agents in old format for backward compat
+        const agents = await User.find({ organizationId: org._id, role: "AGENT", availability: "Available" })
+            .select("name serviceCategory avgSessionDuration");
+
+        const data = await Promise.all(agents.map(async (agent) => {
+            const queueCount = await QueueEntry.countDocuments({ agentId: agent._id, status: "waiting" });
+            return {
+                _id:                agent._id,
+                name:               agent.name,
+                specialization:     agent.serviceCategory,   // compat alias
+                serviceCategory:    agent.serviceCategory,
+                avgConsultationTime: agent.avgSessionDuration, // compat alias
+                avgSessionDuration:  agent.avgSessionDuration,
+                currentQueueLength:  queueCount,
+                estimatedWaitMins:   queueCount * (agent.avgSessionDuration || 5)
+            };
+        }));
+
+        res.json({ success: true, data });
+    } catch (err) {
+        logger.error("Kiosk Agents (compat) fetch error", { error: err.message });
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /kiosk/:slug/agents?serviceId=
+// Returns available agents for a service (for agent-based queue selection)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/:slug/agents", async (req, res) => {
+    try {
+        const org = await resolveOrg(req.params.slug);
+        if (!org) return res.status(404).json({ success: false, message: "Organization not found" });
+
+        const { serviceId } = req.query;
+        const filter = { organizationId: org._id, role: "AGENT", availability: "Available" };
+        if (serviceId) filter.serviceId = serviceId;
+
+        const agents = await User.find(filter).select("name serviceCategory avgSessionDuration serviceId");
+
+        const data = await Promise.all(agents.map(async (agent) => {
+            const queueCount = await QueueEntry.countDocuments({ agentId: agent._id, status: "waiting" });
+            return {
+                _id:                agent._id,
+                name:               agent.name,
+                serviceCategory:    agent.serviceCategory,
+                avgSessionDuration: agent.avgSessionDuration,
+                currentQueueLength: queueCount,
+                estimatedWaitMins:  queueCount * (agent.avgSessionDuration || 5)
+            };
+        }));
+
+        res.json({ success: true, data });
+    } catch (err) {
+        logger.error("Kiosk Agents fetch error", { error: err.message });
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /kiosk/:slug/enqueue
+// Self check-in via kiosk
+// (Replaces: POST /kiosk/:hospitalId/enqueue)
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/:slug/enqueue", async (req, res) => {
+    try {
+        const org = await resolveOrg(req.params.slug);
+        if (!org) return res.status(404).json({ success: false, message: "Organization not found" });
+
+        // Support both new and legacy field names
+        const {
+            serviceId,
+            agentId,
+            doctorId,                 // compat alias for agentId
+            clientName, name,         // clientName preferred; name is compat alias
+            clientPhone, phone,       // clientPhone preferred; phone is compat alias
+            notes, description        // notes preferred; description is compat alias
+        } = req.body;
+
+        const resolvedClientName  = clientName || name;
+        const resolvedClientPhone = clientPhone || phone || "";
+        const resolvedNotes       = notes || description || "Self check-in via Kiosk";
+        const resolvedAgentId     = agentId || doctorId || null;
+
+        if (!resolvedClientName) {
+            return res.status(400).json({ message: "clientName is required" });
         }
 
-        // Get today's start and end for token number calculation
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date();
-        endOfDay.setHours(23, 59, 59, 999);
+        // If no serviceId, try to resolve from agentId
+        let resolvedServiceId = serviceId;
+        if (!resolvedServiceId && resolvedAgentId) {
+            const agent = await User.findOne({ _id: resolvedAgentId, organizationId: org._id });
+            if (agent?.serviceId) resolvedServiceId = agent.serviceId;
+        }
+        if (!resolvedServiceId) {
+            return res.status(400).json({ message: "serviceId is required" });
+        }
 
-        // Calculate token number
-        const count = await Patient.countDocuments({
-            doctorId,
-            status: "waiting"
-        });
+        const service = await Service.findOne({ _id: resolvedServiceId, organizationId: org._id, isActive: true });
+        if (!service) return res.status(404).json({ message: "Service not found" });
 
-        const tokenNumber = count + 1;
+        // Validate agentId belongs to this org
+        if (resolvedAgentId) {
+            const agentCheck = await User.findOne({ _id: resolvedAgentId, organizationId: org._id, role: "AGENT" });
+            if (!agentCheck) return res.status(404).json({ message: "Agent not found" });
+        }
+
+        const count       = await QueueEntry.countDocuments({ serviceId: resolvedServiceId, status: "waiting" });
+        const tokenNumber  = count + 1;
         const uniqueLinkId = uuidv4();
-        const doctor = await User.findById(doctorId);
 
-        // Fetch hospital to fallback to default branch if doctor lacks one
-        const Hospital = require('../models/Hospital');
-        const hospital = await Hospital.findById(hospitalId);
-
-        // Resolve branch ID
-        let branchId = doctor?.branchId;
-        if (!branchId && hospital) {
-            if (hospital.branches && hospital.branches.length > 0) {
-                branchId = hospital.branches[0]._id;
-            } else {
-                // Auto-create default branch for legacy hospitals
-                hospital.branches = [{ name: "Main Branch", address: "Legacy Auto-Created" }];
-                await hospital.save();
-                branchId = hospital.branches[0]._id;
-            }
-        }
-
-        if (!branchId) {
-            return res.status(400).json({ message: "No branch found for this hospital" });
-        }
-
-        // Create Patient
-        const patient = new Patient({
-            hospitalId,
-            branchId,
-            doctorId,
-            name,
-            number: phone || "",
-            description: description || "Self check-in via Kiosk",
+        const entry = await QueueEntry.create({
+            organizationId: org._id,
+            locationId:     org.locations?.[0]?._id,
+            serviceId:      resolvedServiceId,
+            agentId:        resolvedAgentId,
+            clientName:     resolvedClientName.trim(),
+            clientPhone:    resolvedClientPhone.trim(),
+            notes:          resolvedNotes,
             tokenNumber,
+            sortOrder:      tokenNumber,
             uniqueLinkId,
-            status: "waiting",
-            createdAt: new Date()
+            status:         "waiting"
         });
 
-        await patient.save();
-
-        const io = req.app.get("io");
+        const io = req.app.get("io") || global.io;
         if (io) {
-            io.to(doctorId.toString()).emit("queueUpdated");
+            io.to(`service_${resolvedServiceId}`).emit("queue.updated");
+            io.to(`org_${org._id}`).emit("queue.updated");
+            if (resolvedAgentId) io.to(`agent_${resolvedAgentId}`).emit("queue.updated");
         }
 
         const trackingUrl = process.env.FRONTEND_URL
             ? `${process.env.FRONTEND_URL}/status/${uniqueLinkId}`
             : `http://localhost:3000/status/${uniqueLinkId}`;
-        if (phone) {
-            sendQueueConfirmation(phone, name, tokenNumber, trackingUrl, doctor?.name || "Doctor");
+
+        if (resolvedClientPhone) {
+            sendQueueConfirmation(resolvedClientPhone, resolvedClientName, tokenNumber, trackingUrl, service.name);
         }
 
         res.status(201).json({
-            success: true,
-            message: "Added to queue successfully",
+            success:    true,
+            message:    "Added to queue successfully",
             tokenNumber,
             uniqueLinkId,
-            statusLink: `/api/queue/status/${uniqueLinkId}`
+            statusLink: `/api/queue/status/${entry.uniqueLinkId}`
         });
     } catch (err) {
-        console.error("Kiosk enqueue error:", err);
+        logger.error("Kiosk enqueue error", { error: err.message });
         res.status(500).json({ success: false, message: "Server Error" });
     }
 });
 
-// Display Board: Fetch the currently serving token for every available doctor in the hospital
-router.get("/:hospitalId/display", async (req, res) => {
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /kiosk/:slug/display
+// Display board: current queue state for all active agents/services
+// (Replaces: GET /kiosk/:hospitalId/display)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/:slug/display", async (req, res) => {
     try {
-        const { hospitalId } = req.params;
-        const doctors = await User.find({ hospitalId, role: "DOCTOR", availability: { $in: ["Available", "Not Available"] } }).select('name specialization');
+        const org = await resolveOrg(req.params.slug);
+        if (!org) return res.status(404).json({ success: false, message: "Organization not found" });
 
-        // Get today's start and end bounds
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date();
-        endOfDay.setHours(23, 59, 59, 999);
+        const agents = await User.find({
+            organizationId: org._id,
+            role:           "AGENT"
+        }).select("name serviceCategory availability statusMessage serviceId");
 
-        const displayData = await Promise.all(doctors.map(async (doc) => {
-            const upcomingPatients = await Patient.find({
-                doctorId: doc._id,
-                status: "waiting",
-            }).select('tokenNumber name').sort({ tokenNumber: 1 }).limit(4);
+        const displayData = await Promise.all(agents.map(async (agent) => {
+            const upcoming = await QueueEntry.find({
+                agentId: agent._id,
+                status:  "waiting"
+            }).select("tokenNumber clientName").sort({ sortOrder: 1, tokenNumber: 1 }).limit(4);
 
-            const currentlyServing = upcomingPatients.length > 0 ? upcomingPatients[0] : null;
-            const nextTokens = upcomingPatients.slice(1).map(p => p.tokenNumber);
+            const currentlyServing = upcoming.length > 0 ? upcoming[0] : null;
+            const nextTokens       = upcoming.slice(1).map(e => e.tokenNumber);
 
             return {
-                doctorId: doc._id,
-                doctorName: doc.name,
-                specialization: doc.specialization,
-                servingToken: currentlyServing ? currentlyServing.tokenNumber : "---",
-                nextTokens: nextTokens
+                agentId:         agent._id,
+                agentName:       agent.name,
+                doctorId:        agent._id,        // compat alias
+                doctorName:      agent.name,       // compat alias
+                serviceCategory: agent.serviceCategory,
+                specialization:  agent.serviceCategory, // compat alias
+                availability:    agent.availability,
+                statusMessage:   agent.statusMessage || "",
+                servingToken:    currentlyServing ? currentlyServing.tokenNumber : "---",
+                nextTokens
             };
         }));
 
-        res.json({ success: true, data: displayData });
+        res.json({ success: true, organization: { name: org.name }, data: displayData });
     } catch (err) {
-        console.error("Display fetch error:", err);
+        logger.error("Display fetch error", { error: err.message });
         res.status(500).json({ success: false, message: "Server Error" });
     }
 });

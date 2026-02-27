@@ -1,34 +1,38 @@
 const mongoose = require('mongoose');
 
 const appointmentSchema = new mongoose.Schema({
-    hospitalId: {
+    organizationId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Hospital',
-        required: true
+        ref: 'Organization',
+        required: true,
+        index: true         // was: hospitalId → Hospital
     },
-    branchId: {
+    locationId: {
         type: mongoose.Schema.Types.ObjectId,
-        required: true
+        required: true      // was: branchId
     },
-    doctorId: {
+    serviceId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
+        ref: 'Service',
+        required: true      // NEW — previously implicit via agentId
     },
-    patientName: {
+    agentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'         // was: doctorId (optional — pre-assignment to a specific agent)
+    },
+    clientName: {
         type: String,
-        required: true
+        required: true      // was: patientName
     },
-    phone: {
-        type: String,
-        required: true
+    clientPhone: {
+        type: String        // was: phone
     },
     scheduledAt: {
         type: Date,
         required: true
     },
     tokenNumber: {
-        type: Number
+        type: Number        // assigned when status transitions to 'arrived'
     },
     status: {
         type: String,
@@ -39,5 +43,8 @@ const appointmentSchema = new mongoose.Schema({
         type: String
     }
 }, { timestamps: true });
+
+appointmentSchema.index({ organizationId: 1, serviceId: 1, scheduledAt: 1 });
+appointmentSchema.index({ organizationId: 1, agentId: 1, scheduledAt: 1 });
 
 module.exports = mongoose.model('Appointment', appointmentSchema);

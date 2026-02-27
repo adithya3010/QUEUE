@@ -49,7 +49,8 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     try {
-      await api.post("/admin/logout").catch(() => { });
+      await api.post("/org/logout").catch(() => { });
+      await api.post("/admin/logout").catch(() => { });  // legacy compat
       await api.post("/auth/logout").catch(() => { });
     } catch (err) {
       console.error("Logout error:", err);
@@ -59,13 +60,15 @@ export default function Navbar() {
     }
   };
 
-  // Role-based navigation links
+  // Role-based navigation links (new roles + legacy roles for backward compat)
   const allNavLinks: NavLink[] = [
-    { name: "Admin Dashboard", path: "/admin/dashboard", icon: LayoutDashboard, roles: ["HOSPITAL_ADMIN"] },
-    { name: "Analytics", path: "/admin/analytics", icon: Activity, roles: ["HOSPITAL_ADMIN"] },
+    { name: "Admin Dashboard", path: "/admin/dashboard", icon: LayoutDashboard, roles: ["ORG_ADMIN", "HOSPITAL_ADMIN"] },
+    { name: "Analytics", path: "/admin/analytics", icon: Activity, roles: ["ORG_ADMIN", "HOSPITAL_ADMIN"] },
+    { name: "Operator Panel", path: "/operator", icon: ClipboardList, roles: ["OPERATOR"] },
     { name: "Reception Desk", path: "/reception", icon: ClipboardList, roles: ["RECEPTIONIST"] },
+    { name: "Agent Panel", path: "/agent", icon: Users, roles: ["AGENT"] },
     { name: "Doctor Panel", path: "/doctor", icon: Stethoscope, roles: ["DOCTOR"] },
-    { name: "History", path: "/history", icon: History, roles: ["HOSPITAL_ADMIN", "DOCTOR", "RECEPTIONIST"] },
+    { name: "History", path: "/history", icon: History, roles: ["ORG_ADMIN", "HOSPITAL_ADMIN", "AGENT", "DOCTOR", "OPERATOR", "RECEPTIONIST"] },
   ];
 
   // Filter links based on user role
@@ -73,9 +76,10 @@ export default function Navbar() {
     ? allNavLinks.filter(link => link.roles.includes(user.role))
     : [];
 
-  // Role-based styling
+  // Role-based styling (new roles + legacy roles for backward compat)
   const getRoleColor = () => {
     switch (user?.role) {
+      case "ORG_ADMIN":
       case "HOSPITAL_ADMIN":
         return {
           gradient: "from-secondary-400 via-primary-500 to-light-blue-400",
@@ -83,13 +87,15 @@ export default function Navbar() {
           icon: Shield,
           hover: "hover:text-secondary-300"
         };
+      case "AGENT":
       case "DOCTOR":
         return {
           gradient: "from-light-blue-400 via-primary-500 to-success-400",
           badge: "bg-gradient-to-r from-light-blue-500 to-success-600",
-          icon: Stethoscope,
+          icon: Users,
           hover: "hover:text-light-blue-300"
         };
+      case "OPERATOR":
       case "RECEPTIONIST":
         return {
           gradient: "from-primary-400 via-secondary-500 to-light-blue-400",

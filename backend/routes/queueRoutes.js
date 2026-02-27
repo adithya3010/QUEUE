@@ -1,53 +1,40 @@
-const router = require("express").Router();
-const Patient = require("../models/Patient");
-const { auth } = require("../middleware/authMiddleware");
+const router    = require("express").Router();
+const QueueEntry = require("../models/QueueEntry");
+const Service    = require("../models/Service");
+const { auth }   = require("../middleware/authMiddleware");
 const { calculateWaitTimes } = require("../utils/waitTimeCalculator");
 const { v4: uuidv4 } = require("uuid");
-const User = require("../models/User");
-const { addPatientSchema } = require("../validators/pat_validator");
-const logger = require("../utils/logger");
+const User       = require("../models/User");
+const { addQueueEntrySchema } = require("../validators/queueEntry_validator");
+const logger     = require("../utils/logger");
 const { sendQueueConfirmation, sendNearlyUpAlert } = require("../utils/notificationService");
 
-// Helper function to safely emit socket events
-// Handles cases where socket.io might not be initialized (e.g., in tests)
-const emitSocketEvent = (room, event, data, hospitalId = null) => {
-  if (!global.io || typeof global.io.to !== 'function') {
-    return; // Socket.io not available, skip emission
-  }
+// ── Socket helper ─────────────────────────────────────────────────────────────
+const emitSocketEvent = (agentId, event, data, organizationId = null, serviceId = null) => {
+    if (!global.io || typeof global.io.to !== 'function') return;
 
-  const roomSocket = global.io.to(room);
+    const tryEmit = (room) => {
+        if (!room) return;
+        const sock = global.io.to(room);
+        if (sock && typeof sock.emit === 'function') {
+            data !== undefined ? sock.emit(event, data) : sock.emit(event);
+        }
+    };
 
-  // Public room for patients to stream without auth
-  const publicDoctorRoom = `doctor_public_${room}`;
-  const publicDoctorSocket = global.io.to(publicDoctorRoom);
-
-  // Public room for Display Board to stream without auth
-  let publicHospitalSocket = null;
-  if (hospitalId) {
-    publicHospitalSocket = global.io.to(`hospital_public_${hospitalId}`);
-  }
-
-  // Helper inside helper
-  const tryEmit = (sock) => {
-    if (sock && typeof sock.emit === 'function') {
-      if (data !== undefined) {
-        sock.emit(event, data);
-      } else {
-        sock.emit(event);
-      }
-    }
-  }
-
-  tryEmit(roomSocket);
-  tryEmit(publicDoctorSocket);
-  if (publicHospitalSocket) tryEmit(publicHospitalSocket);
+    tryEmit(`agent_${agentId}`);
+    if (serviceId)      tryEmit(`service_${serviceId}`);
+    if (organizationId) tryEmit(`org_${organizationId}`);
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /queue/add — Add client to queue (AGENT or OPERATOR)
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * @swagger
  * /queue/add:
  *   post:
- *     summary: Add a new patient to the queue
+ *     summary: Add a new client to the queue
  *     tags: [Queue Management]
  *     security:
  *       - cookieAuth: []
@@ -57,328 +44,219 @@ const emitSocketEvent = (room, event, data, hospitalId = null) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - name
- *               - number
  *             properties:
- *               name:
+ *               clientName:
  *                 type: string
  *                 example: Jane Doe
- *               number:
+ *               clientPhone:
  *                 type: string
- *                 description: Patient phone number (5–20 characters)
+ *                 description: Phone number for SMS/WhatsApp notifications (optional)
  *                 example: "9876543210"
- *               description:
- *                 type: string
- *                 description: Visit reason (optional)
- *                 example: Routine checkup
  *               notes:
  *                 type: string
- *                 description: Receptionist clinical note (optional)
- *                 example: BP 140/90
- *               doctorId:
+ *                 description: Service note from operator (optional)
+ *                 example: Prefer English
+ *               agentId:
  *                 type: string
- *                 description: Required when called by a Receptionist. Doctors use their own ID automatically.
+ *                 description: Required when called by an Operator. Agents use their own ID automatically.
  *                 example: 507f1f77bcf86cd799439011
+ *               serviceId:
+ *                 type: string
+ *                 description: Optional — auto-resolved from agentId if not provided
+ *                 example: 507f1f77bcf86cd799439022
+ *               externalClientId:
+ *                 type: string
+ *                 description: Zero-PII external reference (optional)
  *     responses:
- *       201:
- *         description: Patient added to queue successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: Patient added successfully
- *                 patient:
- *                   $ref: '#/components/schemas/Patient'
+ *       200:
+ *         description: Client added to queue
  *       400:
  *         description: Validation error
  *       401:
  *         description: Unauthorized
- *       500:
- *         description: Server error
  */
 router.post("/add", auth, async (req, res) => {
-  try {
-    const validatedData = addPatientSchema.parse(req.body);
-    const { name, description, number, notes, doctorId: bodyDoctorId } = validatedData;
+    try {
+        const validatedData = addQueueEntrySchema.parse(req.body);
+        const { clientName, clientPhone, notes, externalClientId } = validatedData;
 
-    // If a Receptionist is adding, they MUST pass doctorId in body.
-    // If a Doctor is adding, they use their own ID.
-    let doctorId = req.user?.id;
+        let agentId   = req.user?.id;
+        let serviceId = validatedData.serviceId || null;
 
-    if (req.user?.role === "RECEPTIONIST") {
-      doctorId = bodyDoctorId;
-      if (!doctorId) return res.status(400).json({ message: "Doctor ID is required for receptionists" });
+        if (req.user?.role === "OPERATOR") {
+            agentId = validatedData.agentId;
+            if (!agentId) return res.status(400).json({ message: "agentId is required for operators" });
 
-      // Ensure they have permission
-      const userRec = await User.findById(req.user.id);
-      if (!userRec) {
-        return res.status(404).json({ message: "Receptionist user not found" });
-      }
+            const operator = await User.findById(req.user.id);
+            if (!operator) return res.status(404).json({ message: "Operator not found" });
 
-      // Check if assignedDoctors exists and has items
-      if (!userRec.assignedDoctors || userRec.assignedDoctors.length === 0) {
-        return res.status(403).json({ message: "No doctors assigned to this receptionist" });
-      }
+            if (!operator.assignedAgents || operator.assignedAgents.length === 0) {
+                return res.status(403).json({ message: "No agents assigned to this operator" });
+            }
 
-      // Convert ObjectIds to strings for comparison
-      const assignedDoctorIds = userRec.assignedDoctors.map(id => id.toString());
-      if (!assignedDoctorIds.includes(doctorId.toString())) {
-        return res.status(403).json({ message: "Not authorized for this doctor's queue" });
-      }
-    } else if (req.user?.role !== "DOCTOR" && !req.doctorId) {
-      return res.status(403).json({ message: "Only Doctors or Receptionists can add patients" });
-    } else if (req.doctorId) {
-      // Fallback for legacy authMiddleware
-      doctorId = req.doctorId;
+            const assignedIds = operator.assignedAgents.map(id => id.toString());
+            if (!assignedIds.includes(agentId.toString())) {
+                return res.status(403).json({ message: "Not authorized for this agent's queue" });
+            }
+        } else if (req.user?.role !== "AGENT" && !req.agentId) {
+            return res.status(403).json({ message: "Only Agents or Operators can add clients to queue" });
+        } else if (req.agentId) {
+            agentId = req.agentId;
+        }
+
+        // Resolve agent + serviceId
+        const agent = await User.findOne({ _id: agentId, role: "AGENT" });
+        if (!agent) return res.status(404).json({ message: "Agent not found" });
+        if (!agent.organizationId) return res.status(500).json({ message: "Agent is not associated with an organization" });
+
+        if (!serviceId) serviceId = agent.serviceId;
+        if (!serviceId) return res.status(400).json({ message: "serviceId could not be resolved — please provide it explicitly" });
+
+        const count = await QueueEntry.countDocuments({ agentId, status: "waiting" });
+
+        const entry = await QueueEntry.create({
+            organizationId:  agent.organizationId,
+            locationId:      agent.locationId || agent.organizationId,  // fallback to org for now
+            serviceId,
+            agentId,
+            clientName,
+            clientPhone,
+            notes:           notes || "",
+            externalClientId,
+            tokenNumber:     count + 1,
+            sortOrder:       count + 1,
+            uniqueLinkId:    uuidv4()
+        });
+
+        emitSocketEvent(agentId.toString(), "queue.updated", undefined,
+            agent.organizationId.toString(), serviceId.toString());
+
+        const trackingUrl = process.env.FRONTEND_URL
+            ? `${process.env.FRONTEND_URL}/status/${entry.uniqueLinkId}`
+            : `http://localhost:3000/status/${entry.uniqueLinkId}`;
+        sendQueueConfirmation(clientPhone, clientName, entry.tokenNumber, trackingUrl, agent.name);
+
+        res.json({ message: "Client added to queue successfully", patient: entry, statusLink: `/api/queue/status/${entry.uniqueLinkId}` });
+    } catch (err) {
+        if (err.name === "ZodError" || err.issues) {
+            return res.status(400).json({
+                message: "Validation failed",
+                errors: (err.issues || err.errors || []).map(e => ({
+                    field: e.path?.join('.') || 'unknown',
+                    message: e.message
+                }))
+            });
+        }
+        logger.error("Add QueueEntry Error", { error: err?.message, stack: err?.stack });
+        res.status(500).json({ message: "Server error" });
     }
-
-    // Verify the doctor exists and get their hospital
-    const doctor = await User.findOne({ _id: doctorId, role: "DOCTOR" });
-    if (!doctor) {
-      return res.status(404).json({ message: "Doctor not found" });
-    }
-
-    if (!doctor.hospitalId) {
-      return res.status(500).json({ message: "Doctor is not associated with a hospital" });
-    }
-
-    const count = await Patient.countDocuments({
-      doctorId,
-      status: "waiting"
-    });
-
-    const patient = await Patient.create({
-      hospitalId: doctor.hospitalId,
-      branchId: req.user.branchId || doctor.branchId || doctor.hospitalId,
-      doctorId,
-      name,
-      description,
-      notes: notes || "",
-      number,
-      tokenNumber: count + 1,
-      sortOrder: count + 1,
-      uniqueLinkId: uuidv4()
-    });
-
-    emitSocketEvent(doctorId.toString(), "queueUpdated", undefined, doctor.hospitalId.toString());
-
-    // Send WhatsApp/SMS Confirmation
-    const trackingUrl = process.env.FRONTEND_URL
-      ? `${process.env.FRONTEND_URL}/status/${patient.uniqueLinkId}`
-      : `http://localhost:3000/status/${patient.uniqueLinkId}`;
-    sendQueueConfirmation(patient.number, patient.name, patient.tokenNumber, trackingUrl, doctor.name);
-
-    res.json({
-      message: "Patient added successfully",
-      patient,
-      statusLink: `/api/queue/status/${patient.uniqueLinkId}`
-    });
-  } catch (err) {
-    // Handle Zod validation errors
-    if (err.name === "ZodError" || err.issues) {
-      return res.status(400).json({
-        message: "Validation failed",
-        errors: (err.issues || err.errors || []).map(e => ({
-          field: e.path?.join('.') || 'unknown',
-          message: e.message
-        }))
-      });
-    }
-    logger.error("Add Patient Error", {
-      error: err?.message || String(err),
-      stack: err?.stack,
-      name: err?.name,
-      userRole: req.user?.role,
-      doctorId: doctorId,
-      requestBody: req.body
-    });
-    res.status(500).json({
-      message: "Server error",
-      details: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
-  }
 });
 
-
+// GET /queue/history/
 router.get("/history/", auth, async (req, res) => {
-  try {
-    const { date, status, search, doctorId: queryDoctorId } = req.query;
-    let targetDoctorId;
+    try {
+        const { date, status, search, agentId: queryAgentId } = req.query;
+        let targetAgentId;
 
-    // Debug logging
-    logger.info("History request", {
-      userId: req.user?.id,
-      role: req.user?.role,
-      hospitalId: req.user?.hospitalId,
-      queryDoctorId
-    });
+        if (!req.user || !req.user.role) return res.status(401).json({ message: "Authentication required" });
 
-    if (!req.user || !req.user.role) {
-      return res.status(401).json({ message: "Authentication required" });
-    }
+        if (req.user.role === "AGENT") {
+            targetAgentId = req.user.id;
+        } else if (req.user.role === "OPERATOR") {
+            const operator = await User.findById(req.user.id);
+            if (!operator) return res.status(404).json({ message: "Operator not found" });
+            if (!operator.assignedAgents || operator.assignedAgents.length === 0) return res.json([]);
 
-    // Determine doctor context based on role
-    if (req.user.role === "DOCTOR") {
-      // Doctors can only see their own history
-      targetDoctorId = req.user.id;
-    } else if (req.user?.role === "RECEPTIONIST") {
-      // Receptionists can see history for their assigned doctors
-      try {
-        const receptionist = await User.findById(req.user.id);
-        if (!receptionist) {
-          logger.error("Receptionist not found", { userId: req.user.id });
-          return res.status(404).json({ message: "Receptionist not found" });
-        }
-
-        logger.info("Receptionist found", {
-          userId: req.user.id,
-          assignedDoctors: receptionist.assignedDoctors,
-          assignedDoctorsLength: receptionist.assignedDoctors?.length
-        });
-
-        if (!receptionist.assignedDoctors || receptionist.assignedDoctors.length === 0) {
-          logger.info("Receptionist has no assigned doctors, returning empty array");
-          return res.json([]);
-        }
-
-        if (queryDoctorId) {
-          // Verify receptionist has access to this doctor
-          const assignedDoctorIds = receptionist.assignedDoctors.map(id => id.toString());
-          if (!assignedDoctorIds.includes(queryDoctorId.toString())) {
-            return res.status(403).json({ message: "Not authorized for this doctor's history" });
-          }
-          targetDoctorId = queryDoctorId;
+            if (queryAgentId) {
+                const ids = operator.assignedAgents.map(id => id.toString());
+                if (!ids.includes(queryAgentId)) return res.status(403).json({ message: "Not authorized for this agent's history" });
+                targetAgentId = queryAgentId;
+            } else {
+                targetAgentId = { $in: operator.assignedAgents };
+            }
+        } else if (req.user.role === "ORG_ADMIN") {
+            if (queryAgentId) {
+                const agent = await User.findOne({ _id: queryAgentId, organizationId: req.user.organizationId, role: "AGENT" });
+                if (!agent) return res.status(403).json({ message: "Agent not found in your organization" });
+                targetAgentId = queryAgentId;
+            } else {
+                const agents = await User.find({ organizationId: req.user.organizationId, role: "AGENT" }).select('_id');
+                if (agents.length === 0) return res.json([]);
+                targetAgentId = { $in: agents.map(a => a._id) };
+            }
         } else {
-          // Return history for all assigned doctors
-          targetDoctorId = { $in: receptionist.assignedDoctors };
+            return res.status(400).json({ message: "Invalid user role" });
         }
-      } catch (recepErr) {
-        logger.error("Error handling receptionist history", {
-          error: recepErr.message,
-          stack: recepErr.stack,
-          userId: req.user.id
-        });
-        return res.status(500).json({
-          message: "Error processing receptionist request",
-          details: process.env.NODE_ENV === 'development' ? recepErr.message : undefined
-        });
-      }
-    } else if (req.user?.role === "HOSPITAL_ADMIN") {
-      // Admins can see history for any doctor in their hospital
-      if (queryDoctorId) {
-        // Verify doctor belongs to admin's hospital
-        const doctor = await User.findOne({ _id: queryDoctorId, hospitalId: req.user.hospitalId, role: "DOCTOR" });
-        if (!doctor) {
-          return res.status(403).json({ message: "Doctor not found in your hospital" });
-        }
-        targetDoctorId = queryDoctorId;
-      } else {
-        // Return history for all doctors in the hospital
-        const doctors = await User.find({ hospitalId: req.user.hospitalId, role: "DOCTOR" }).select('_id');
-        if (doctors.length === 0) {
-          return res.json([]);
-        }
-        targetDoctorId = { $in: doctors.map(d => d._id) };
-      }
-    } else {
-      return res.status(400).json({ message: "Invalid user role" });
-    }
 
-    let filter = {
-      hospitalId: req.user.hospitalId,
-      doctorId: targetDoctorId,
-      status: { $in: ["completed", "cancelled"] }
-    };
-    if (status) filter.status = status;
-    if (search) filter.name = { $regex: search, $options: "i" };
-    if (date && !isNaN(new Date(date))) {
-      const start = new Date(date);
-      const end = new Date(date);
-      end.setHours(23, 59, 59, 999);
-      filter.completedAt = { $gte: start, $lte: end };
-    }
+        const filter = {
+            organizationId: req.user.organizationId,
+            agentId: targetAgentId,
+            status: { $in: ["completed", "cancelled"] }
+        };
+        if (status) filter.status = status;
+        if (search) filter.clientName = { $regex: search, $options: "i" };
+        if (date && !isNaN(new Date(date))) {
+            const start = new Date(date);
+            const end   = new Date(date);
+            end.setHours(23, 59, 59, 999);
+            filter.completedAt = { $gte: start, $lte: end };
+        }
 
-    const history = await Patient.find(filter).sort({ completedAt: -1 }).populate('doctorId', 'name specialization');
-    res.json(history);
-  } catch (err) {
-    logger.error("History Fetch Error", {
-      error: err.message,
-      stack: err.stack,
-      userId: req.user?.id,
-      role: req.user?.role,
-      query: req.query
-    });
-    res.status(500).json({
-      message: "Server Error",
-      details: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
-  }
+        const history = await QueueEntry.find(filter)
+            .sort({ completedAt: -1 })
+            .populate('agentId', 'name serviceCategory')
+            .populate('serviceId', 'name category');
+        res.json(history);
+    } catch (err) {
+        logger.error("History Fetch Error", { error: err.message, stack: err.stack });
+        res.status(500).json({ message: "Server error" });
+    }
 });
 
+// GET /queue/:agentId — waiting queue for an agent
 /**
  * @swagger
- * /queue/{doctorId}:
+ * /queue/{agentId}:
  *   get:
- *     summary: Get waiting queue for a specific doctor
- *     description: Returns all waiting patients for a doctor with estimated wait times
+ *     summary: Get waiting queue for an agent
  *     tags: [Queue Management]
  *     security:
  *       - cookieAuth: []
  *     parameters:
  *       - in: path
- *         name: doctorId
+ *         name: agentId
  *         required: true
  *         schema:
  *           type: string
- *         description: Doctor ID
- *         example: 507f1f77bcf86cd799439011
  *     responses:
  *       200:
- *         description: Queue retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Patient'
- *       401:
- *         description: Unauthorized
- *       404:
- *         description: Doctor not found
- *       500:
- *         description: Server error
+ *         description: Queue retrieved with estimated wait times
  */
-router.get("/:doctorId", auth, async (req, res) => {
-  try {
-    const doctor = await User.findOne({ _id: req.params.doctorId, role: "DOCTOR" });
-    if (!doctor) {
-      return res.status(404).json({ message: "Doctor not found" });
+router.get("/:agentId", auth, async (req, res) => {
+    try {
+        const agent = await User.findOne({ _id: req.params.agentId, role: "AGENT" });
+        if (!agent) return res.status(404).json({ message: "Agent not found" });
+
+        const queue = await QueueEntry.find({
+            organizationId: agent.organizationId,
+            agentId: req.params.agentId,
+            status: "waiting"
+        }).sort({ sortOrder: 1, tokenNumber: 1 });
+
+        const queueWithWaitTimes = calculateWaitTimes(queue, agent);
+        res.json(queueWithWaitTimes);
+    } catch (err) {
+        logger.error("Fetch Queue Error", { error: err.message });
+        res.status(500).json({ message: "Server error" });
     }
-    const queue = await Patient.find({
-      hospitalId: doctor.hospitalId,
-      doctorId: req.params.doctorId,
-      status: { $in: ["waiting"] }
-    }).sort({ sortOrder: 1, tokenNumber: 1 });
-
-    const queueWithWaitTimes = calculateWaitTimes(queue, doctor);
-
-    res.json(queueWithWaitTimes);
-  } catch (err) {
-    logger.error("Fetch Queue Error", { error: err.message, stack: err.stack });
-    res.status(500).json({ message: "Server error, please try again later" });
-  }
 });
 
+// GET /queue/status/:uniqueLinkId — Public client status
 /**
  * @swagger
  * /queue/status/{uniqueLinkId}:
  *   get:
- *     summary: Get patient status by unique link (Public endpoint)
- *     description: Allows patients to check their queue status using the unique link sent to them. No authentication required.
+ *     summary: Get client status (public endpoint — no auth required)
  *     tags: [Queue Management]
  *     parameters:
  *       - in: path
@@ -386,84 +264,65 @@ router.get("/:doctorId", auth, async (req, res) => {
  *         required: true
  *         schema:
  *           type: string
- *         description: Unique link ID provided to patient
- *         example: abc123def456xyz789
  *     responses:
  *       200:
- *         description: Patient status retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               oneOf:
- *                 - type: object
- *                   properties:
- *                     status:
- *                       type: string
- *                       example: completed
- *                     message:
- *                       type: string
- *                       example: Your visit is complete
- *                 - $ref: '#/components/schemas/Patient'
+ *         description: Client status and queue overview
  *       404:
  *         description: Invalid link
- *       500:
- *         description: Server error
  */
 router.get("/status/:uniqueLinkId", async (req, res) => {
-  try {
-    const patient = await Patient.findOne({
-      uniqueLinkId: req.params.uniqueLinkId
-    });
+    try {
+        const entry = await QueueEntry.findOne({ uniqueLinkId: req.params.uniqueLinkId });
+        if (!entry) return res.status(404).json({ message: "Invalid tracking link" });
 
-    if (!patient) {
-      return res.status(404).json({ message: "Invalid link" });
+        if (entry.status === "completed") {
+            return res.json({ status: "completed", message: "Thank you for your visit", feedback: entry.feedback });
+        }
+        if (entry.status === "cancelled") {
+            return res.json({ status: "cancelled", message: "Your queue entry has been cancelled" });
+        }
+
+        const queue = await QueueEntry.find({
+            agentId: entry.agentId,
+            status:  "waiting"
+        }).sort({ sortOrder: 1, tokenNumber: 1 });
+
+        const queueWithMarker = queue.map((q, index) => ({
+            id:          q._id,
+            clientName:  q.clientName,
+            tokenNumber: q.tokenNumber,
+            status:      q.status,
+            isMe:        q.uniqueLinkId === entry.uniqueLinkId,
+            position:    index + 1
+        }));
+
+        const myPosition = queueWithMarker.find(q => q.isMe)?.position || null;
+        const agent = await User.findById(entry.agentId);
+
+        res.json({
+            agentId:           entry.agentId,
+            agentName:         agent?.name,
+            agentAvailability: agent?.availability,
+            agentStatusMessage: agent?.statusMessage || "",
+            serviceId:         entry.serviceId,
+            myStatus:          entry.status,
+            myTokenNumber:     entry.tokenNumber,
+            avgSessionDuration: agent?.avgSessionDuration || 5,
+            myPosition,
+            queue:             queueWithMarker
+        });
+    } catch (err) {
+        logger.error("Status Error", { error: err.message });
+        res.status(500).json({ message: "Server error" });
     }
-    if (patient.status === "completed") {
-      return res.json({
-        status: "completed",
-        message: "Thank you for visiting",
-        feedback: patient.feedback
-      });
-    }
-    const queue = await Patient.find({
-      doctorId: patient.doctorId,
-      status: { $in: ["waiting"] }
-    }).sort({ sortOrder: 1, tokenNumber: 1 });
-    const queueWithMarker = queue.map((p, index) => ({
-      id: p._id,
-      name: p.name,
-      tokenNumber: p.tokenNumber,
-      status: p.status,
-      isMe: p.uniqueLinkId === patient.uniqueLinkId,
-      position: index + 1
-    }));
-
-    const myPosition = queueWithMarker.find(q => q.isMe)?.position || null;
-    const doctor = await User.findById(patient.doctorId);
-
-    res.json({
-      doctorId: patient.doctorId,
-      doctorName: doctor.name,
-      doctorAvailability: doctor.availability,
-      doctorPauseMessage: doctor.pauseMessage || "",
-      myStatus: patient.status,
-      myTokenNumber: patient.tokenNumber,
-      avgTime: doctor.avgConsultationTime || 5,
-      myPosition,
-      queue: queueWithMarker
-    });
-
-  } catch (err) {
-    logger.error("Status Error", { error: err.message, stack: err.stack });
-    res.status(500).json({ message: "Server error" });
-  }
 });
 
+// PUT /queue/feedback/:uniqueLinkId
 /**
  * @swagger
  * /queue/feedback/{uniqueLinkId}:
  *   put:
- *     summary: Submit feedback for a completed visit
+ *     summary: Submit feedback for a completed session (public)
  *     tags: [Queue Management]
  *     parameters:
  *       - in: path
@@ -477,8 +336,7 @@ router.get("/status/:uniqueLinkId", async (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - rating
+ *             required: [rating]
  *             properties:
  *               rating:
  *                 type: number
@@ -488,237 +346,209 @@ router.get("/status/:uniqueLinkId", async (req, res) => {
  *                 type: string
  *     responses:
  *       200:
- *         description: Feedback submitted successfully
+ *         description: Feedback submitted
  *       400:
  *         description: Invalid rating
- *       404:
- *         description: Invalid link or visit not completed
- *       500:
- *         description: Server error
  */
 router.put("/feedback/:uniqueLinkId", async (req, res) => {
-  try {
-    const { rating, comment } = req.body;
-
-    if (!rating || rating < 1 || rating > 5) {
-      return res.status(400).json({ message: "Rating must be between 1 and 5" });
+    try {
+        const { rating, comment } = req.body;
+        if (!rating || rating < 1 || rating > 5) {
+            return res.status(400).json({ message: "Rating must be between 1 and 5" });
+        }
+        const entry = await QueueEntry.findOneAndUpdate(
+            { uniqueLinkId: req.params.uniqueLinkId, status: "completed" },
+            { feedback: { rating, comment } },
+            { new: true }
+        );
+        if (!entry) return res.status(404).json({ message: "Invalid link or session not completed yet" });
+        res.json({ message: "Feedback submitted successfully", feedback: entry.feedback });
+    } catch (err) {
+        logger.error("Feedback Error", { error: err.message });
+        res.status(500).json({ message: "Server error" });
     }
-
-    const patient = await Patient.findOneAndUpdate(
-      { uniqueLinkId: req.params.uniqueLinkId, status: "completed" },
-      { feedback: { rating, comment } },
-      { new: true }
-    );
-
-    if (!patient) {
-      return res.status(404).json({ message: "Invalid link or visit not completed yet" });
-    }
-
-    res.json({ message: "Feedback submitted successfully", feedback: patient.feedback });
-  } catch (err) {
-    logger.error("Feedback Error", { error: err.message, stack: err.stack });
-    res.status(500).json({ message: "Server error" });
-  }
 });
 
-
+// PUT /queue/complete/:id
 router.put("/complete/:id", auth, async (req, res) => {
-  try {
-    const patient = await Patient.findOneAndUpdate(
-      { _id: req.params.id, hospitalId: req.user.hospitalId },
-      { status: "completed", completedAt: new Date() },
-      { new: true }
-    );
+    try {
+        const entry = await QueueEntry.findOneAndUpdate(
+            { _id: req.params.id, organizationId: req.user.organizationId },
+            { status: "completed", completedAt: new Date() },
+            { new: true }
+        );
+        if (!entry) return res.status(404).json({ message: "Queue entry not found" });
 
-    if (!patient)
-      return res.status(404).json({ message: "Patient not found" });
+        emitSocketEvent(entry.agentId.toString(), "queue.updated", undefined,
+            req.user.organizationId.toString(), entry.serviceId?.toString());
+        emitSocketEvent(entry.uniqueLinkId, "queue.completed", { message: "Thank you for your visit" });
 
-    emitSocketEvent(patient.doctorId.toString(), "queueUpdated", undefined, req.user.hospitalId.toString());
-    emitSocketEvent(patient.uniqueLinkId, "visitCompleted", { message: "Thank you for visiting" });
+        // Notify nearly-up client (position 2)
+        const nextWaiting = await QueueEntry.find({ agentId: entry.agentId, status: "waiting" })
+            .sort({ tokenNumber: 1 }).limit(2);
+        if (nextWaiting.length >= 2) {
+            const p2    = nextWaiting[1];
+            const agent = await User.findById(entry.agentId);
+            sendNearlyUpAlert(p2.clientPhone, p2.clientName, agent.name);
+        }
 
-    // Check if new position 2 exists and notify them
-    const nextWaiting = await Patient.find({ doctorId: patient.doctorId, status: "waiting" }).sort({ tokenNumber: 1 }).limit(2);
-    if (nextWaiting.length >= 2) {
-      const p2 = nextWaiting[1];
-      const doctor = await User.findById(patient.doctorId);
-      sendNearlyUpAlert(p2.number, p2.name, doctor.name);
+        res.json(entry);
+    } catch (err) {
+        logger.error("Complete Entry Error", { error: err.message });
+        res.status(500).json({ message: "Server error" });
     }
-
-    res.json(patient);
-
-  } catch (err) {
-    logger.error("Complete Patient Error", { error: err.message, stack: err.stack });
-    res.status(500).json({ message: "Server error" });
-  }
 });
 
+// PUT /queue/cancel/:id
 router.put("/cancel/:id", auth, async (req, res) => {
-  try {
-    const patient = await Patient.findOneAndUpdate(
-      { _id: req.params.id, hospitalId: req.user.hospitalId },
-      { status: "cancelled" },
-      { new: true }
-    );
+    try {
+        const entry = await QueueEntry.findOneAndUpdate(
+            { _id: req.params.id, organizationId: req.user.organizationId },
+            { status: "cancelled" },
+            { new: true }
+        );
+        if (!entry) return res.status(404).json({ message: "Queue entry not found" });
 
-    if (!patient)
-      return res.status(404).json({ message: "Patient not found" });
+        emitSocketEvent(entry.agentId.toString(), "queue.updated", undefined,
+            req.user.organizationId.toString(), entry.serviceId?.toString());
+        emitSocketEvent(entry.uniqueLinkId, "queue.cancelled", { message: "Your queue entry has been cancelled" });
 
-    emitSocketEvent(patient.doctorId.toString(), "queueUpdated", undefined, req.user.hospitalId.toString());
-    emitSocketEvent(patient.uniqueLinkId, "visitCancelled", { message: "Your appointment has been cancelled." });
+        const nextWaiting = await QueueEntry.find({ agentId: entry.agentId, status: "waiting" })
+            .sort({ tokenNumber: 1 }).limit(2);
+        if (nextWaiting.length >= 2) {
+            const p2    = nextWaiting[1];
+            const agent = await User.findById(entry.agentId);
+            sendNearlyUpAlert(p2.clientPhone, p2.clientName, agent.name);
+        }
 
-    // Check if new position 2 exists and notify them
-    const nextWaiting = await Patient.find({ doctorId: patient.doctorId, status: "waiting" }).sort({ tokenNumber: 1 }).limit(2);
-    if (nextWaiting.length >= 2) {
-      const p2 = nextWaiting[1];
-      const doctor = await User.findById(patient.doctorId);
-      sendNearlyUpAlert(p2.number, p2.name, doctor.name);
+        res.json(entry);
+    } catch (err) {
+        logger.error("Cancel Error", { error: err.message });
+        res.status(500).json({ message: "Server error" });
     }
-
-    res.json(patient);
-
-  } catch (err) {
-    logger.error("Cancel Error", { error: err.message, stack: err.stack });
-    res.status(500).json({ message: "Server error" });
-  }
 });
 
+// PUT /queue/reorder/:agentId
+router.put("/reorder/:agentId", auth, async (req, res) => {
+    try {
+        const { newOrder } = req.body;
 
+        const queue = await QueueEntry.find({
+            organizationId: req.user.organizationId,
+            agentId:        req.params.agentId,
+            status:         "waiting"
+        }).sort({ sortOrder: 1, tokenNumber: 1 });
 
-router.put("/reorder/:doctorId", auth, async (req, res) => {
-  try {
-    const { newOrder } = req.body;
+        const topLimit = Math.min(3, queue.length);
+        if (newOrder.length !== topLimit) return res.status(400).json({ message: "Invalid reorder request" });
 
-    let queue = await Patient.find({
-      hospitalId: req.user.hospitalId,
-      doctorId: req.params.doctorId,
-      status: "waiting"
-    }).sort({ sortOrder: 1, tokenNumber: 1 });
+        for (let i = 0; i < newOrder.length; i++) {
+            await QueueEntry.findByIdAndUpdate(newOrder[i], { sortOrder: i + 1 });
+        }
+        let nextSortOrder = newOrder.length + 1;
+        for (let i = topLimit; i < queue.length; i++) {
+            if (!newOrder.includes(queue[i]._id.toString())) {
+                await QueueEntry.findByIdAndUpdate(queue[i]._id, { sortOrder: nextSortOrder++ });
+            }
+        }
 
-    const topLimit = Math.min(3, queue.length);
-
-    if (newOrder.length !== topLimit)
-      return res.status(400).json({ message: "Invalid reorder request" });
-
-    // Only update sortOrder — tokenNumber stays unchanged (patient's assigned number)
-    for (let i = 0; i < newOrder.length; i++) {
-      await Patient.findByIdAndUpdate(newOrder[i], {
-        sortOrder: i + 1
-      });
+        emitSocketEvent(req.params.agentId, "queue.updated", undefined, req.user.organizationId.toString());
+        res.json({ message: "Reordered successfully" });
+    } catch (err) {
+        logger.error("Reorder Error", { error: err.message });
+        res.status(500).json({ message: "Server error" });
     }
-
-    // Keep remaining patients' sortOrder after top 3
-    let nextSortOrder = newOrder.length + 1;
-    for (let i = topLimit; i < queue.length; i++) {
-      if (!newOrder.includes(queue[i]._id.toString())) {
-        await Patient.findByIdAndUpdate(queue[i]._id, {
-          sortOrder: nextSortOrder++
-        });
-      }
-    }
-
-    emitSocketEvent(req.params.doctorId.toString(), "queueUpdated", undefined, req.user.hospitalId.toString());
-
-    res.json({ message: "Reordered successfully" });
-
-  } catch (err) {
-    logger.error("Reorder Error", { error: err.message, stack: err.stack });
-    res.status(500).json({ message: "Server error" });
-  }
 });
 
+// PUT /queue/prioritize/:entryId (corrected spelling from 'prioritise')
+router.put("/prioritize/:entryId", auth, async (req, res) => {
+    try {
+        const entry = await QueueEntry.findById(req.params.entryId);
+        if (!entry) return res.status(404).json({ message: "Queue entry not found" });
 
-// PUT /queue/prioritise/:patientId — Doctor moves a patient to position #1
-router.put("/prioritise/:patientId", auth, async (req, res) => {
-  try {
-    const patient = await Patient.findById(req.params.patientId);
-    if (!patient) return res.status(404).json({ message: "Patient not found" });
+        const agentId = entry.agentId.toString();
+        if (req.user.role === "AGENT" && req.user.id !== agentId) {
+            return res.status(403).json({ message: "Not authorized for this queue" });
+        }
 
-    // Verify the doctor owns this queue
-    const doctorId = patient.doctorId.toString();
-    if (req.user.role === "DOCTOR" && req.user.id !== doctorId) {
-      return res.status(403).json({ message: "Not authorized for this queue" });
+        const waitingQueue = await QueueEntry.find({ agentId, status: "waiting" }).sort({ sortOrder: 1, tokenNumber: 1 });
+        let newSortOrder = 2;
+        for (const q of waitingQueue) {
+            if (q._id.toString() === req.params.entryId) {
+                await QueueEntry.findByIdAndUpdate(q._id, { sortOrder: 1 });
+            } else {
+                await QueueEntry.findByIdAndUpdate(q._id, { sortOrder: newSortOrder++ });
+            }
+        }
+
+        emitSocketEvent(agentId, "queue.updated", undefined,
+            entry.organizationId.toString(), entry.serviceId?.toString());
+        res.json({ message: "Client prioritized successfully" });
+    } catch (err) {
+        logger.error("Prioritize Error", { error: err.message });
+        res.status(500).json({ message: "Server error" });
     }
-
-    // Get all waiting patients for this doctor, sorted by sortOrder
-    const waitingQueue = await Patient.find({ doctorId, status: "waiting" }).sort({ sortOrder: 1, tokenNumber: 1 });
-
-    // Re-order via sortOrder only: prioritised patient gets sortOrder 1, others shift up
-    // tokenNumber (patient's assigned number) remains untouched
-    let newSortOrder = 2;
-    for (const p of waitingQueue) {
-      if (p._id.toString() === req.params.patientId) {
-        await Patient.findByIdAndUpdate(p._id, { sortOrder: 1 });
-      } else {
-        await Patient.findByIdAndUpdate(p._id, { sortOrder: newSortOrder++ });
-      }
-    }
-
-    emitSocketEvent(doctorId, "queueUpdated", undefined, patient.hospitalId.toString());
-    res.json({ message: "Patient prioritised successfully" });
-  } catch (err) {
-    logger.error("Prioritise Error", { error: err.message, stack: err.stack });
-    res.status(500).json({ message: "Server error" });
-  }
 });
 
-// GET /queue/summary/today — Doctor daily summary card
+// Backward compat alias: PUT /queue/prioritise/:id
+router.put("/prioritise/:entryId", auth, (req, res, next) => {
+    req.url = `/prioritize/${req.params.entryId}`;
+    next('route');
+});
+
+// GET /queue/summary/today
 router.get("/summary/today", auth, async (req, res) => {
-  try {
-    if (req.user.role !== "DOCTOR") {
-      return res.status(403).json({ message: "Doctors only" });
+    try {
+        if (req.user.role !== "AGENT") return res.status(403).json({ message: "Agents only" });
+
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const todaysEntries = await QueueEntry.find({
+            agentId:   req.user.id,
+            createdAt: { $gte: startOfDay, $lte: endOfDay }
+        });
+
+        const completed = todaysEntries.filter(e => e.status === "completed");
+        const cancelled = todaysEntries.filter(e => e.status === "cancelled");
+        const waiting   = todaysEntries.filter(e => e.status === "waiting");
+
+        let avgSessionTime = 0;
+        if (completed.length >= 2) {
+            const sorted = completed.sort((a, b) => new Date(a.completedAt) - new Date(b.completedAt));
+            let totalDelta = 0;
+            for (let i = 1; i < sorted.length; i++) {
+                totalDelta += (new Date(sorted[i].completedAt) - new Date(sorted[i - 1].completedAt));
+            }
+            avgSessionTime = Math.round(totalDelta / (sorted.length - 1) / 60000);
+        }
+
+        const hourBuckets = {};
+        for (const e of todaysEntries) {
+            const hour = new Date(e.createdAt).getHours();
+            hourBuckets[hour] = (hourBuckets[hour] || 0) + 1;
+        }
+        let busiestHour = null, maxCount = 0;
+        for (const [hour, count] of Object.entries(hourBuckets)) {
+            if (count > maxCount) { maxCount = count; busiestHour = parseInt(hour); }
+        }
+        const formatHour = (h) => h === null ? "–" : `${h % 12 || 12}${h < 12 ? "am" : "pm"}`;
+
+        res.json({
+            totalToday:  todaysEntries.length,
+            completed:   completed.length,
+            cancelled:   cancelled.length,
+            waiting:     waiting.length,
+            avgSessionTime,
+            busiestHour: formatHour(busiestHour),
+            noShows:     cancelled.length
+        });
+    } catch (err) {
+        logger.error("Summary Today Error", { error: err.message });
+        res.status(500).json({ message: "Server error" });
     }
-
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const todaysPatients = await Patient.find({
-      doctorId: req.user.id,
-      createdAt: { $gte: startOfDay, $lte: endOfDay }
-    });
-
-    const completed = todaysPatients.filter(p => p.status === "completed");
-    const cancelled = todaysPatients.filter(p => p.status === "cancelled");
-    const waiting = todaysPatients.filter(p => p.status === "waiting");
-
-    // Average consultation time: delta between consecutive completedAt timestamps
-    let avgConsultTime = 0;
-    if (completed.length >= 2) {
-      const sorted = completed.sort((a, b) => new Date(a.completedAt) - new Date(b.completedAt));
-      let totalDelta = 0;
-      for (let i = 1; i < sorted.length; i++) {
-        totalDelta += (new Date(sorted[i].completedAt) - new Date(sorted[i - 1].completedAt));
-      }
-      avgConsultTime = Math.round(totalDelta / (sorted.length - 1) / 60000); // in minutes
-    }
-
-    // Busiest hour: which hour had the most patient arrivals
-    const hourBuckets = {};
-    for (const p of todaysPatients) {
-      const hour = new Date(p.createdAt).getHours();
-      hourBuckets[hour] = (hourBuckets[hour] || 0) + 1;
-    }
-    let busiestHour = null;
-    let maxCount = 0;
-    for (const [hour, count] of Object.entries(hourBuckets)) {
-      if (count > maxCount) { maxCount = count; busiestHour = parseInt(hour); }
-    }
-    const formatHour = (h) => h === null ? "–" : `${h % 12 || 12}${h < 12 ? "am" : "pm"}`;
-
-    res.json({
-      totalToday: todaysPatients.length,
-      completed: completed.length,
-      cancelled: cancelled.length,
-      waiting: waiting.length,
-      avgConsultTime,
-      busiestHour: formatHour(busiestHour),
-      noShows: cancelled.length
-    });
-  } catch (err) {
-    logger.error("Summary Today Error", { error: err.message, stack: err.stack });
-    res.status(500).json({ message: "Server error" });
-  }
 });
 
 module.exports = router;
